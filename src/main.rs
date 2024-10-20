@@ -36,6 +36,7 @@ struct AppData {
     id_to_head: HashMap<ObjectId, Head>,
     id_to_partial_mode: HashMap<ObjectId, PartialMode>,
     id_to_mode: HashMap<ObjectId, Mode>,
+    apply_configuration: bool,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -202,6 +203,8 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
     ) {
         match event {
             zwlr_output_manager_v1::Event::Head { head } => {
+                // A new head was added, so try to apply a layout on the next `Done` event.
+                state.apply_configuration = true;
                 state
                     .id_to_partial_head
                     .insert(head.id(), PartialHead::default());
@@ -218,7 +221,6 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
                     .expect("Done is called, so the partial head should be well-defined"),
             );
         }
-        println!("Heads: {:?}", state.id_to_head);
         for (id, partial_mode) in state.id_to_partial_mode.drain() {
             state.id_to_mode.insert(
                 id,
@@ -227,8 +229,26 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
                     .expect("Done is called, so the partial mode should be well-defined"),
             );
         }
-        println!("Modes: {:?}", state.id_to_mode);
-        // TODO: Notify that the outputs are done.
+        if state.apply_configuration {
+            println!(
+                "Apply config for {:?}",
+                state
+                    .id_to_head
+                    .values()
+                    .map(|head| head.identity.description.as_str())
+                    .collect::<Vec<_>>()
+            );
+        } else {
+            println!(
+                "Save config for {:?}",
+                state
+                    .id_to_head
+                    .values()
+                    .map(|head| head.identity.description.as_str())
+                    .collect::<Vec<_>>()
+            );
+        }
+        state.apply_configuration = false;
     }
 
     event_created_child!(AppData, ZwlrOutputHeadV1, [
@@ -264,6 +284,8 @@ impl Dispatch<ZwlrOutputHeadV1, ()> for AppData {
                 state.id_to_partial_head.remove(&proxy.id());
                 state.id_to_head.remove(&proxy.id());
                 proxy.release();
+                // This head was removed, so try to apply a layout on the next `Done` event.
+                state.apply_configuration = true;
             }
             zwlr_output_head_v1::Event::Name { name } => {
                 let HeadState::Partial(partial_head) = head_state else {

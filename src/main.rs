@@ -34,6 +34,7 @@ fn main() {
 struct AppData {
     id_to_partial_head: HashMap<ObjectId, PartialHead>,
     id_to_head: HashMap<ObjectId, Head>,
+    head_identity_to_id: HashMap<HeadIdentity, ObjectId>,
     id_to_partial_mode: HashMap<ObjectId, PartialMode>,
     id_to_mode: HashMap<ObjectId, Mode>,
     apply_configuration: bool,
@@ -267,12 +268,17 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
             _ => return,
         }
         for (id, partial_head) in state.id_to_partial_head.drain() {
-            state.id_to_head.insert(
-                id,
-                partial_head
-                    .try_into()
-                    .expect("Done is called, so the partial head should be well-defined"),
+            let head: Head = partial_head
+                .try_into()
+                .expect("Done is called, so the partial head should be well-defined");
+            assert!(
+                state
+                    .head_identity_to_id
+                    .insert(head.identity.clone(), id.clone())
+                    .is_none(),
+                "Head identities should be unique."
             );
+            state.id_to_head.insert(id, head);
         }
         for (id, partial_mode) in state.id_to_partial_mode.drain() {
             state.id_to_mode.insert(
@@ -355,7 +361,12 @@ impl Dispatch<ZwlrOutputHeadV1, ()> for AppData {
         match event {
             zwlr_output_head_v1::Event::Finished => {
                 state.id_to_partial_head.remove(&proxy.id());
-                state.id_to_head.remove(&proxy.id());
+                if let Some(head) = state.id_to_head.remove(&proxy.id()) {
+                    assert!(
+                        state.head_identity_to_id.remove(&head.identity).is_some(),
+                        "Missing HeadIdentity for existing head"
+                    );
+                }
                 proxy.release();
                 // This head was removed, so try to apply a layout on the next `Done` event.
                 state.apply_configuration = true;

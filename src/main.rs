@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+use complete::{Head, HeadConfiguration, HeadIdentity, Mode};
 use partial::{PartialHead, PartialMode, PartialObjects};
 use wayland_client::{
     backend::ObjectId,
@@ -16,6 +17,7 @@ use wayland_protocols_wlr::output_management::v1::client::{
     zwlr_output_mode_v1::{self, ZwlrOutputModeV1},
 };
 
+mod complete;
 mod partial;
 
 fn main() {
@@ -41,38 +43,6 @@ struct AppData {
     id_to_mode: HashMap<ObjectId, Mode>,
     apply_configuration: bool,
     saved_layouts: Vec<HashMap<HeadIdentity, Option<SavedConfiguration>>>,
-}
-
-#[derive(Clone, Debug)]
-struct Head {
-    identity: HeadIdentity,
-    modes: Vec<ObjectId>,
-    configuration: Option<HeadConfiguration>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct HeadIdentity {
-    name: String,
-    description: String,
-    make: Option<String>,
-    model: Option<String>,
-    serial_number: Option<String>,
-    physical_size: Option<(u32, u32)>,
-}
-
-#[derive(Clone, Debug)]
-struct HeadConfiguration {
-    current_mode: ObjectId,
-    position: (u32, u32),
-    transform: WEnum<Transform>,
-    scale: f64,
-    adaptive_sync: Option<WEnum<AdaptiveSyncState>>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Mode {
-    size: (u32, u32),
-    refresh: Option<u32>,
 }
 
 #[derive(Clone, Debug)]

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use wayland_client::{backend::ObjectId, protocol::wl_output::Transform, WEnum};
 use wayland_protocols_wlr::output_management::v1::client::zwlr_output_head_v1::AdaptiveSyncState;
 
@@ -92,4 +94,10 @@ impl TryFrom<PartialMode> for Mode {
             refresh: value.refresh,
         })
     }
+}
+
+#[derive(Default)]
+pub struct PartialObjects {
+    pub id_to_head: HashMap<ObjectId, PartialHead>,
+    pub id_to_mode: HashMap<ObjectId, PartialMode>,
 }

@@ -149,6 +149,21 @@ struct Mode {
     refresh: Option<u32>,
 }
 
+impl TryFrom<PartialMode> for Mode {
+    // TODO: Make an actual error type.
+    type Error = ();
+
+    fn try_from(value: PartialMode) -> Result<Self, Self::Error> {
+        let Some(size) = value.size else {
+            return Err(());
+        };
+        Ok(Self {
+            size,
+            refresh: value.refresh,
+        })
+    }
+}
+
 #[derive(Clone, Debug)]
 struct SavedConfiguration {
     mode: Mode,
@@ -173,21 +188,6 @@ impl SavedConfiguration {
             scale: configuration.scale,
             adaptive_sync: configuration.adaptive_sync,
         }
-    }
-}
-
-impl TryFrom<PartialMode> for Mode {
-    // TODO: Make an actual error type.
-    type Error = ();
-
-    fn try_from(value: PartialMode) -> Result<Self, Self::Error> {
-        let Some(size) = value.size else {
-            return Err(());
-        };
-        Ok(Self {
-            size,
-            refresh: value.refresh,
-        })
     }
 }
 

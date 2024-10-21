@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use complete::{Head, HeadConfiguration, HeadIdentity, HeadState, Mode, ModeState};
-use partial::{PartialHead, PartialHeadState, PartialMode, PartialModeState, PartialObjects};
+use partial::{PartialHead, PartialHeadState, PartialModeState, PartialObjects};
 use wayland_client::{
     backend::ObjectId,
     event_created_child,
@@ -153,9 +153,16 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
             zwlr_output_manager_v1::Event::Done { .. } => {}
             _ => return,
         }
+        for (id, partial_mode) in state.partial_objects.id_to_mode.drain() {
+            state.id_to_mode.insert(
+                id,
+                partial_mode
+                    .try_into()
+                    .expect("Done is called, so the partial mode should be well-defined"),
+            );
+        }
         for (id, partial_head) in state.partial_objects.id_to_head.drain() {
-            let head: HeadState = partial_head
-                .try_into()
+            let head: HeadState = HeadState::create_from_partial(partial_head, &state.id_to_mode)
                 .expect("Done is called, so the partial head should be well-defined");
             assert!(
                 state
@@ -165,14 +172,6 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
                 "Head identities should be unique."
             );
             state.id_to_head.insert(id, head);
-        }
-        for (id, partial_mode) in state.partial_objects.id_to_mode.drain() {
-            state.id_to_mode.insert(
-                id,
-                partial_mode
-                    .try_into()
-                    .expect("Done is called, so the partial mode should be well-defined"),
-            );
         }
 
         let current_layout = state

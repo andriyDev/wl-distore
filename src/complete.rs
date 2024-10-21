@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use wayland_client::{backend::ObjectId, protocol::wl_output::Transform, WEnum};
 use wayland_protocols_wlr::output_management::v1::client::{
     zwlr_output_head_v1::{AdaptiveSyncState, ZwlrOutputHeadV1},
@@ -14,7 +16,7 @@ pub struct HeadState {
 #[derive(Clone, Debug)]
 pub struct Head {
     pub identity: HeadIdentity,
-    pub modes: Vec<ObjectId>,
+    pub mode_to_id: HashMap<Mode, ObjectId>,
     pub configuration: Option<HeadConfiguration>,
 }
 
@@ -37,11 +39,12 @@ pub struct HeadConfiguration {
     pub adaptive_sync: Option<WEnum<AdaptiveSyncState>>,
 }
 
-impl TryFrom<PartialHead> for Head {
+impl Head {
     // TODO: Make an actual error type.
-    type Error = ();
-
-    fn try_from(value: PartialHead) -> Result<Self, Self::Error> {
+    fn create_from_partial(
+        value: PartialHead,
+        id_to_mode: &HashMap<ObjectId, ModeState>,
+    ) -> Result<Self, ()> {
         let Some(name) = value.name else {
             return Err(());
         };
@@ -84,20 +87,33 @@ impl TryFrom<PartialHead> for Head {
                 serial_number: value.serial_number,
                 physical_size: value.physical_size,
             },
-            modes: value.modes,
+            mode_to_id: value
+                .modes
+                .iter()
+                .map(|id| {
+                    (
+                        id_to_mode
+                            .get(id)
+                            .map(|mode_state| mode_state.mode.clone())
+                            .expect("Head contains unknown mode"),
+                        id.clone(),
+                    )
+                })
+                .collect(),
             configuration,
         })
     }
 }
 
-impl TryFrom<PartialHeadState> for HeadState {
+impl HeadState {
     // TODO: Make an actual error type.
-    type Error = ();
-
-    fn try_from(value: PartialHeadState) -> Result<Self, Self::Error> {
+    pub fn create_from_partial(
+        value: PartialHeadState,
+        id_to_mode: &HashMap<ObjectId, ModeState>,
+    ) -> Result<Self, ()> {
         Ok(Self {
             proxy: value.proxy,
-            head: value.head.try_into()?,
+            head: Head::create_from_partial(value.head, id_to_mode)?,
         })
     }
 }
@@ -107,7 +123,7 @@ pub struct ModeState {
     pub mode: Mode,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Mode {
     pub size: (u32, u32),
     pub refresh: Option<u32>,

@@ -34,9 +34,9 @@ pub struct HeadIdentity {
 pub struct HeadConfiguration {
     pub current_mode: ObjectId,
     pub position: (u32, u32),
-    pub transform: WEnum<Transform>,
+    pub transform: Transform,
     pub scale: f64,
-    pub adaptive_sync: Option<WEnum<AdaptiveSyncState>>,
+    pub adaptive_sync: Option<AdaptiveSyncState>,
 }
 
 impl Head {

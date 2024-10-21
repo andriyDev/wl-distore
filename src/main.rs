@@ -9,7 +9,7 @@ use wayland_client::{
         wl_output::Transform,
         wl_registry::{self, WlRegistry},
     },
-    Connection, Dispatch, Proxy, WEnum,
+    Connection, Dispatch, Proxy,
 };
 use wayland_protocols_wlr::output_management::v1::client::{
     zwlr_output_head_v1::{self, AdaptiveSyncState, ZwlrOutputHeadV1},
@@ -49,9 +49,9 @@ struct AppData {
 struct SavedConfiguration {
     mode: Mode,
     position: (u32, u32),
-    transform: WEnum<Transform>,
+    transform: Transform,
     scale: f64,
-    adaptive_sync: Option<WEnum<AdaptiveSyncState>>,
+    adaptive_sync: Option<AdaptiveSyncState>,
 }
 
 impl SavedConfiguration {
@@ -366,18 +366,23 @@ impl Dispatch<ZwlrOutputHeadV1, ()> for AppData {
                     configuration.position = (x as u32, y as u32);
                 }
             },
-            zwlr_output_head_v1::Event::Transform { transform } => match head_state {
-                HeadState::Partial(partial_head) => {
-                    partial_head.transform = Some(transform);
+            zwlr_output_head_v1::Event::Transform { transform } => {
+                let transform = transform
+                    .into_result()
+                    .expect("Transform is an invalid variant");
+                match head_state {
+                    HeadState::Partial(partial_head) => {
+                        partial_head.transform = Some(transform);
+                    }
+                    HeadState::Full(head) => {
+                        let configuration = head
+                            .configuration
+                            .as_mut()
+                            .expect("Received a Transform event while head is disabled");
+                        configuration.transform = transform;
+                    }
                 }
-                HeadState::Full(head) => {
-                    let configuration = head
-                        .configuration
-                        .as_mut()
-                        .expect("Received a Transform event while head is disabled");
-                    configuration.transform = transform;
-                }
-            },
+            }
             zwlr_output_head_v1::Event::Scale { scale } => match head_state {
                 HeadState::Partial(partial_head) => {
                     partial_head.scale = Some(scale);
@@ -390,18 +395,23 @@ impl Dispatch<ZwlrOutputHeadV1, ()> for AppData {
                     configuration.scale = scale;
                 }
             },
-            zwlr_output_head_v1::Event::AdaptiveSync { state } => match head_state {
-                HeadState::Partial(partial_head) => {
-                    partial_head.adaptive_sync = Some(state);
+            zwlr_output_head_v1::Event::AdaptiveSync { state } => {
+                let state = state
+                    .into_result()
+                    .expect("Adaptive sync is an invalid variant");
+                match head_state {
+                    HeadState::Partial(partial_head) => {
+                        partial_head.adaptive_sync = Some(state);
+                    }
+                    HeadState::Full(head) => {
+                        let configuration = head
+                            .configuration
+                            .as_mut()
+                            .expect("Received a AdaptiveSync event while head is disabled");
+                        configuration.adaptive_sync = Some(state);
+                    }
                 }
-                HeadState::Full(head) => {
-                    let configuration = head
-                        .configuration
-                        .as_mut()
-                        .expect("Received a AdaptiveSync event while head is disabled");
-                    configuration.adaptive_sync = Some(state);
-                }
-            },
+            }
             _ => {}
         }
     }

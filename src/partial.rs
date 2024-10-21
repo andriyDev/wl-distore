@@ -18,9 +18,9 @@ pub struct PartialHead {
     pub modes: Vec<ObjectId>,
     pub current_mode: Option<ObjectId>,
     pub position: Option<(u32, u32)>,
-    pub transform: Option<WEnum<Transform>>,
+    pub transform: Option<Transform>,
     pub scale: Option<f64>,
-    pub adaptive_sync: Option<WEnum<AdaptiveSyncState>>,
+    pub adaptive_sync: Option<AdaptiveSyncState>,
 }
 
 pub struct PartialHeadState {

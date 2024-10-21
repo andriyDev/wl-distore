@@ -53,7 +53,7 @@ struct SavedConfiguration {
     position: (u32, u32),
     transform: Transform,
     scale: f64,
-    adaptive_sync: Option<AdaptiveSyncState>,
+    adaptive_sync: Option<bool>,
 }
 
 impl SavedConfiguration {
@@ -98,7 +98,11 @@ impl SavedConfiguration {
         new_configuration_head.set_scale(self.scale);
         new_configuration_head.set_transform(self.transform);
         if let Some(adaptive_sync) = self.adaptive_sync {
-            new_configuration_head.set_adaptive_sync(adaptive_sync);
+            new_configuration_head.set_adaptive_sync(if adaptive_sync {
+                AdaptiveSyncState::Enabled
+            } else {
+                AdaptiveSyncState::Disabled
+            });
         }
     }
 }
@@ -458,6 +462,10 @@ impl Dispatch<ZwlrOutputHeadV1, ()> for AppData {
                 let state = state
                     .into_result()
                     .expect("Adaptive sync is an invalid variant");
+                let state = match state {
+                    AdaptiveSyncState::Enabled => true,
+                    _ => false,
+                };
                 match head_state {
                     HeadState::Partial(partial_head) => {
                         partial_head.adaptive_sync = Some(state);

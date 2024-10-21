@@ -1,9 +1,8 @@
 use std::collections::HashMap;
 
-use wayland_client::{backend::ObjectId, protocol::wl_output::Transform, WEnum};
+use wayland_client::{backend::ObjectId, protocol::wl_output::Transform};
 use wayland_protocols_wlr::output_management::v1::client::{
-    zwlr_output_head_v1::{AdaptiveSyncState, ZwlrOutputHeadV1},
-    zwlr_output_mode_v1::ZwlrOutputModeV1,
+    zwlr_output_head_v1::ZwlrOutputHeadV1, zwlr_output_mode_v1::ZwlrOutputModeV1,
 };
 
 #[derive(Clone, Debug, Default)]
@@ -20,7 +19,7 @@ pub struct PartialHead {
     pub position: Option<(u32, u32)>,
     pub transform: Option<Transform>,
     pub scale: Option<f64>,
-    pub adaptive_sync: Option<AdaptiveSyncState>,
+    pub adaptive_sync: Option<bool>,
 }
 
 pub struct PartialHeadState {

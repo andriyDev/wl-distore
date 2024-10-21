@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
-use complete::{Head, HeadConfiguration, HeadIdentity, Mode};
-use partial::{PartialHead, PartialMode, PartialObjects};
+use complete::{Head, HeadConfiguration, HeadIdentity, HeadState, Mode, ModeState};
+use partial::{PartialHead, PartialHeadState, PartialMode, PartialModeState, PartialObjects};
 use wayland_client::{
     backend::ObjectId,
     event_created_child,
@@ -38,9 +38,9 @@ fn main() {
 #[derive(Default)]
 struct AppData {
     partial_objects: PartialObjects,
-    id_to_head: HashMap<ObjectId, Head>,
+    id_to_head: HashMap<ObjectId, HeadState>,
     head_identity_to_id: HashMap<HeadIdentity, ObjectId>,
-    id_to_mode: HashMap<ObjectId, Mode>,
+    id_to_mode: HashMap<ObjectId, ModeState>,
     apply_configuration: bool,
     saved_layouts: Vec<HashMap<HeadIdentity, Option<SavedConfiguration>>>,
 }
@@ -57,12 +57,13 @@ struct SavedConfiguration {
 impl SavedConfiguration {
     fn from_config(
         configuration: &HeadConfiguration,
-        id_to_mode: &HashMap<ObjectId, Mode>,
+        id_to_mode: &HashMap<ObjectId, ModeState>,
     ) -> Self {
         SavedConfiguration {
             mode: id_to_mode
                 .get(&configuration.current_mode)
                 .expect("The current mode doesn't exist.")
+                .mode
                 .clone(),
             position: configuration.position,
             transform: configuration.transform,
@@ -140,23 +141,26 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
             zwlr_output_manager_v1::Event::Head { head } => {
                 // A new head was added, so try to apply a layout on the next `Done` event.
                 state.apply_configuration = true;
-                state
-                    .partial_objects
-                    .id_to_head
-                    .insert(head.id(), PartialHead::default());
+                state.partial_objects.id_to_head.insert(
+                    head.id(),
+                    PartialHeadState {
+                        proxy: head,
+                        head: Default::default(),
+                    },
+                );
                 return;
             }
             zwlr_output_manager_v1::Event::Done { .. } => {}
             _ => return,
         }
         for (id, partial_head) in state.partial_objects.id_to_head.drain() {
-            let head: Head = partial_head
+            let head: HeadState = partial_head
                 .try_into()
                 .expect("Done is called, so the partial head should be well-defined");
             assert!(
                 state
                     .head_identity_to_id
-                    .insert(head.identity.clone(), id.clone())
+                    .insert(head.head.identity.clone(), id.clone())
                     .is_none(),
                 "Head identities should be unique."
             );
@@ -176,8 +180,8 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
             .values()
             .map(|head| {
                 (
-                    head.identity.clone(),
-                    head.configuration.as_ref().map(|configuration| {
+                    head.head.identity.clone(),
+                    head.head.configuration.as_ref().map(|configuration| {
                         SavedConfiguration::from_config(&configuration, &state.id_to_mode)
                     }),
                 )
@@ -232,9 +236,9 @@ impl Dispatch<ZwlrOutputHeadV1, ()> for AppData {
         }
         let head_state =
             if let Some(partial_head) = state.partial_objects.id_to_head.get_mut(&proxy.id()) {
-                HeadState::Partial(partial_head)
+                HeadState::Partial(&mut partial_head.head)
             } else if let Some(head) = state.id_to_head.get_mut(&proxy.id()) {
-                HeadState::Full(head)
+                HeadState::Full(&mut head.head)
             } else {
                 panic!(
                     "This proxy {} does not correspond to a previously existing head.",
@@ -246,7 +250,10 @@ impl Dispatch<ZwlrOutputHeadV1, ()> for AppData {
                 state.partial_objects.id_to_head.remove(&proxy.id());
                 if let Some(head) = state.id_to_head.remove(&proxy.id()) {
                     assert!(
-                        state.head_identity_to_id.remove(&head.identity).is_some(),
+                        state
+                            .head_identity_to_id
+                            .remove(&head.head.identity)
+                            .is_some(),
                         "Missing HeadIdentity for existing head"
                     );
                 }
@@ -317,10 +324,13 @@ impl Dispatch<ZwlrOutputHeadV1, ()> for AppData {
                     );
                 };
                 partial_head.modes.push(mode.id());
-                state
-                    .partial_objects
-                    .id_to_mode
-                    .insert(mode.id(), PartialMode::default());
+                state.partial_objects.id_to_mode.insert(
+                    mode.id(),
+                    PartialModeState {
+                        proxy: mode,
+                        mode: Default::default(),
+                    },
+                );
             }
             zwlr_output_head_v1::Event::Enabled { enabled } => {
                 let enabled = enabled > 0;
@@ -419,7 +429,7 @@ impl Dispatch<ZwlrOutputModeV1, ()> for AppData {
                     .id_to_mode
                     .get_mut(&id)
                     .expect("The mode was previously reported and not finished.");
-                partial_mode.size = Some((width as u32, height as u32));
+                partial_mode.mode.size = Some((width as u32, height as u32));
             }
             zwlr_output_mode_v1::Event::Refresh { refresh } => {
                 let partial_mode = state
@@ -427,7 +437,7 @@ impl Dispatch<ZwlrOutputModeV1, ()> for AppData {
                     .id_to_mode
                     .get_mut(&id)
                     .expect("The mode was previously reported and not finished.");
-                partial_mode.refresh = Some(refresh as u32);
+                partial_mode.mode.refresh = Some(refresh as u32);
             }
             zwlr_output_mode_v1::Event::Finished => {
                 state.partial_objects.id_to_mode.remove(&id);

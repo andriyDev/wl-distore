@@ -1,7 +1,15 @@
 use wayland_client::{backend::ObjectId, protocol::wl_output::Transform, WEnum};
-use wayland_protocols_wlr::output_management::v1::client::zwlr_output_head_v1::AdaptiveSyncState;
+use wayland_protocols_wlr::output_management::v1::client::{
+    zwlr_output_head_v1::{AdaptiveSyncState, ZwlrOutputHeadV1},
+    zwlr_output_mode_v1::ZwlrOutputModeV1,
+};
 
-use crate::partial::{PartialHead, PartialMode};
+use crate::partial::{PartialHead, PartialHeadState, PartialMode, PartialModeState};
+
+pub struct HeadState {
+    pub proxy: ZwlrOutputHeadV1,
+    pub head: Head,
+}
 
 #[derive(Clone, Debug)]
 pub struct Head {
@@ -82,6 +90,23 @@ impl TryFrom<PartialHead> for Head {
     }
 }
 
+impl TryFrom<PartialHeadState> for HeadState {
+    // TODO: Make an actual error type.
+    type Error = ();
+
+    fn try_from(value: PartialHeadState) -> Result<Self, Self::Error> {
+        Ok(Self {
+            proxy: value.proxy,
+            head: value.head.try_into()?,
+        })
+    }
+}
+
+pub struct ModeState {
+    pub proxy: ZwlrOutputModeV1,
+    pub mode: Mode,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Mode {
     pub size: (u32, u32),
@@ -99,6 +124,18 @@ impl TryFrom<PartialMode> for Mode {
         Ok(Self {
             size,
             refresh: value.refresh,
+        })
+    }
+}
+
+impl TryFrom<PartialModeState> for ModeState {
+    // TODO: Make an actual error type.
+    type Error = ();
+
+    fn try_from(value: PartialModeState) -> Result<Self, Self::Error> {
+        Ok(Self {
+            proxy: value.proxy,
+            mode: value.mode.try_into()?,
         })
     }
 }

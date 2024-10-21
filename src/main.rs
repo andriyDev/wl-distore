@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
-    io::{BufReader, BufWriter},
+    io::{BufReader, BufWriter, ErrorKind},
 };
 
 use complete::{Head, HeadIdentity, HeadState, ModeState};
@@ -63,7 +63,15 @@ impl AppData {
     }
 
     fn load_layouts(&mut self, path: &str) -> Result<(), std::io::Error> {
-        let file = std::fs::File::open(path)?;
+        let file = match std::fs::File::open(path) {
+            Ok(file) => file,
+            Err(err) => {
+                if err.kind() == ErrorKind::NotFound {
+                    return Ok(());
+                }
+                return Err(err);
+            }
+        };
         self.layout_data = serde_json::from_reader(BufReader::new(file))?;
         Ok(())
     }

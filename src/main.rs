@@ -5,7 +5,7 @@ use std::{
 
 use complete::{Head, HeadIdentity, HeadState, ModeState};
 use partial::{PartialHead, PartialHeadState, PartialModeState, PartialObjects};
-use serde::{LayoutData, SavedConfiguration};
+use serde::{LayoutData, SavedConfiguration, SavedLayoutData};
 use wayland_client::{
     backend::ObjectId,
     event_created_child,
@@ -72,13 +72,15 @@ impl AppData {
                 return Err(err);
             }
         };
-        self.layout_data = serde_json::from_reader(BufReader::new(file))?;
+        let saved_layout_data: SavedLayoutData = serde_json::from_reader(BufReader::new(file))?;
+        self.layout_data = (&saved_layout_data).into();
         Ok(())
     }
 
     fn save_layouts(&self, path: &str) -> Result<(), std::io::Error> {
         let file = std::fs::File::create(path)?;
-        serde_json::to_writer(BufWriter::new(file), &self.layout_data)?;
+        let saved_layout_data: SavedLayoutData = (&self.layout_data).into();
+        serde_json::to_writer(BufWriter::new(file), &saved_layout_data)?;
         Ok(())
     }
 }

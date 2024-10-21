@@ -120,3 +120,37 @@ impl SavedConfiguration {
 pub struct LayoutData {
     pub layouts: Vec<HashMap<HeadIdentity, Option<SavedConfiguration>>>,
 }
+
+#[derive(Default, Serialize, Deserialize)]
+pub struct SavedLayoutData {
+    pub layouts: Vec<Vec<(HeadIdentity, Option<SavedConfiguration>)>>,
+}
+
+impl From<&SavedLayoutData> for LayoutData {
+    fn from(value: &SavedLayoutData) -> Self {
+        Self {
+            layouts: value
+                .layouts
+                .iter()
+                .map(|entries| entries.iter().cloned().collect())
+                .collect(),
+        }
+    }
+}
+
+impl From<&LayoutData> for SavedLayoutData {
+    fn from(value: &LayoutData) -> Self {
+        Self {
+            layouts: value
+                .layouts
+                .iter()
+                .map(|entries| {
+                    entries
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect()
+                })
+                .collect(),
+        }
+    }
+}

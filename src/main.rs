@@ -12,6 +12,8 @@ use wayland_client::{
     Connection, Dispatch, Proxy,
 };
 use wayland_protocols_wlr::output_management::v1::client::{
+    zwlr_output_configuration_head_v1::{self, ZwlrOutputConfigurationHeadV1},
+    zwlr_output_configuration_v1::{self, ZwlrOutputConfigurationV1},
     zwlr_output_head_v1::{self, AdaptiveSyncState, ZwlrOutputHeadV1},
     zwlr_output_manager_v1::{self, ZwlrOutputManagerV1},
     zwlr_output_mode_v1::{self, ZwlrOutputModeV1},
@@ -69,6 +71,34 @@ impl SavedConfiguration {
             transform: configuration.transform,
             scale: configuration.scale,
             adaptive_sync: configuration.adaptive_sync,
+        }
+    }
+
+    // TODO: Make a real error type.
+    fn apply(
+        &self,
+        new_configuration_head: &mut ZwlrOutputConfigurationHeadV1,
+        mode_to_id: &HashMap<Mode, ObjectId>,
+        id_to_mode: &HashMap<ObjectId, ModeState>,
+    ) {
+        if let Some(id) = mode_to_id.get(&self.mode).cloned() {
+            let proxy = &id_to_mode
+                .get(&id)
+                .expect("Missing mode for existing id")
+                .proxy;
+            new_configuration_head.set_mode(proxy);
+        } else {
+            new_configuration_head.set_custom_mode(
+                self.mode.size.0 as i32,
+                self.mode.size.1 as i32,
+                self.mode.refresh.unwrap_or(0) as i32,
+            );
+        }
+        new_configuration_head.set_position(self.position.0 as i32, self.position.1 as i32);
+        new_configuration_head.set_scale(self.scale);
+        new_configuration_head.set_transform(self.transform);
+        if let Some(adaptive_sync) = self.adaptive_sync {
+            new_configuration_head.set_adaptive_sync(adaptive_sync);
         }
     }
 }
@@ -131,13 +161,13 @@ impl Dispatch<WlRegistry, ()> for AppData {
 impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
     fn event(
         state: &mut Self,
-        _proxy: &ZwlrOutputManagerV1,
+        proxy: &ZwlrOutputManagerV1,
         event: zwlr_output_manager_v1::Event,
         _data: &(),
         _conn: &Connection,
-        _qhandle: &wayland_client::QueueHandle<Self>,
+        qhandle: &wayland_client::QueueHandle<Self>,
     ) {
-        match event {
+        let serial = match event {
             zwlr_output_manager_v1::Event::Head { head } => {
                 // A new head was added, so try to apply a layout on the next `Done` event.
                 state.apply_configuration = true;
@@ -150,9 +180,9 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
                 );
                 return;
             }
-            zwlr_output_manager_v1::Event::Done { .. } => {}
+            zwlr_output_manager_v1::Event::Done { serial } => serial,
             _ => return,
-        }
+        };
         for (id, partial_mode) in state.partial_objects.id_to_mode.drain() {
             state.id_to_mode.insert(
                 id,
@@ -210,6 +240,35 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
                         .cloned()
                         .collect::<HashSet<_>>()
                 );
+                let identity_to_configuration = &state.saved_layouts[layout_index];
+                let new_configuration = proxy.create_configuration(serial, qhandle, ());
+                for (identity, configuration) in identity_to_configuration.iter() {
+                    let id = state
+                        .head_identity_to_id
+                        .get(identity)
+                        .expect("Could not find head for matched layout");
+
+                    let head_state = &state
+                        .id_to_head
+                        .get(&id)
+                        .expect("Could not find proxy for id");
+
+                    match configuration.as_ref() {
+                        None => {
+                            new_configuration.disable_head(&head_state.proxy);
+                        }
+                        Some(configuration) => {
+                            let mut new_configuration_head =
+                                new_configuration.enable_head(&head_state.proxy, qhandle, ());
+                            configuration.apply(
+                                &mut new_configuration_head,
+                                &head_state.head.mode_to_id,
+                                &state.id_to_mode,
+                            );
+                        }
+                    }
+                }
+                new_configuration.apply();
             }
         }
         state.apply_configuration = false;
@@ -455,5 +514,43 @@ impl Dispatch<ZwlrOutputModeV1, ()> for AppData {
             }
             _ => {}
         }
+    }
+}
+
+impl Dispatch<ZwlrOutputConfigurationV1, ()> for AppData {
+    fn event(
+        state: &mut Self,
+        proxy: &ZwlrOutputConfigurationV1,
+        event: zwlr_output_configuration_v1::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qhandle: &wayland_client::QueueHandle<Self>,
+    ) {
+        match event {
+            zwlr_output_configuration_v1::Event::Succeeded => {
+                // We've applied the configuration!
+                state.apply_configuration = false;
+            }
+            // Do nothing if the event has been cancelled.
+            zwlr_output_configuration_v1::Event::Cancelled => {}
+            zwlr_output_configuration_v1::Event::Failed => {
+                eprintln!("Failed to apply output configuration");
+            }
+            _ => {}
+        }
+        proxy.destroy();
+    }
+}
+
+impl Dispatch<ZwlrOutputConfigurationHeadV1, ()> for AppData {
+    fn event(
+        _state: &mut Self,
+        _proxy: &ZwlrOutputConfigurationHeadV1,
+        _event: zwlr_output_configuration_head_v1::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qhandle: &wayland_client::QueueHandle<Self>,
+    ) {
+        // There are no events here.
     }
 }

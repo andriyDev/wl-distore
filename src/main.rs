@@ -1,8 +1,11 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    io::{BufReader, BufWriter},
+};
 
-use complete::{Head, HeadConfiguration, HeadIdentity, HeadState, Mode, ModeState};
+use complete::{Head, HeadIdentity, HeadState, ModeState};
 use partial::{PartialHead, PartialHeadState, PartialModeState, PartialObjects};
-use serde::Transform;
+use serde::{LayoutData, SavedConfiguration};
 use wayland_client::{
     backend::ObjectId,
     event_created_child,
@@ -31,6 +34,9 @@ fn main() {
     display.get_registry(&qhandle, ());
 
     let mut app_data = AppData::default();
+    app_data
+        .load_layouts("config.json")
+        .expect("Failed to load layouts");
     loop {
         event_queue.blocking_dispatch(&mut app_data).unwrap();
     }
@@ -43,77 +49,29 @@ struct AppData {
     head_identity_to_id: HashMap<HeadIdentity, ObjectId>,
     id_to_mode: HashMap<ObjectId, ModeState>,
     apply_configuration: bool,
-    saved_layouts: Vec<HashMap<HeadIdentity, Option<SavedConfiguration>>>,
-}
-
-#[derive(Clone, Debug)]
-struct SavedConfiguration {
-    mode: Mode,
-    position: (u32, u32),
-    transform: Transform,
-    scale: f64,
-    adaptive_sync: Option<bool>,
-}
-
-impl SavedConfiguration {
-    fn from_config(
-        configuration: &HeadConfiguration,
-        id_to_mode: &HashMap<ObjectId, ModeState>,
-    ) -> Self {
-        SavedConfiguration {
-            mode: id_to_mode
-                .get(&configuration.current_mode)
-                .expect("The current mode doesn't exist.")
-                .mode
-                .clone(),
-            position: configuration.position,
-            transform: configuration.transform,
-            scale: configuration.scale,
-            adaptive_sync: configuration.adaptive_sync,
-        }
-    }
-
-    // TODO: Make a real error type.
-    fn apply(
-        &self,
-        new_configuration_head: &mut ZwlrOutputConfigurationHeadV1,
-        mode_to_id: &HashMap<Mode, ObjectId>,
-        id_to_mode: &HashMap<ObjectId, ModeState>,
-    ) {
-        if let Some(id) = mode_to_id.get(&self.mode).cloned() {
-            let proxy = &id_to_mode
-                .get(&id)
-                .expect("Missing mode for existing id")
-                .proxy;
-            new_configuration_head.set_mode(proxy);
-        } else {
-            new_configuration_head.set_custom_mode(
-                self.mode.size.0 as i32,
-                self.mode.size.1 as i32,
-                self.mode.refresh.unwrap_or(0) as i32,
-            );
-        }
-        new_configuration_head.set_position(self.position.0 as i32, self.position.1 as i32);
-        new_configuration_head.set_scale(self.scale);
-        new_configuration_head.set_transform(self.transform.into());
-        if let Some(adaptive_sync) = self.adaptive_sync {
-            new_configuration_head.set_adaptive_sync(if adaptive_sync {
-                AdaptiveSyncState::Enabled
-            } else {
-                AdaptiveSyncState::Disabled
-            });
-        }
-    }
+    layout_data: LayoutData,
 }
 
 impl AppData {
     fn find_layout_match(&self, query_layout: &HashSet<HeadIdentity>) -> Option<usize> {
-        for (index, saved_layout) in self.saved_layouts.iter().enumerate() {
+        for (index, saved_layout) in self.layout_data.layouts.iter().enumerate() {
             if matches_layout(&saved_layout.keys().cloned().collect(), query_layout) {
                 return Some(index);
             }
         }
         None
+    }
+
+    fn load_layouts(&mut self, path: &str) -> Result<(), std::io::Error> {
+        let file = std::fs::File::open(path)?;
+        self.layout_data = serde_json::from_reader(BufReader::new(file))?;
+        Ok(())
+    }
+
+    fn save_layouts(&self, path: &str) -> Result<(), std::io::Error> {
+        let file = std::fs::File::create(path)?;
+        serde_json::to_writer(BufWriter::new(file), &self.layout_data)?;
+        Ok(())
     }
 }
 
@@ -226,24 +184,30 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
                     "Saved layout: {:?}",
                     current_layout.keys().cloned().collect::<HashSet<_>>()
                 );
-                state.saved_layouts.push(current_layout);
+                state.layout_data.layouts.push(current_layout);
+                state
+                    .save_layouts("config.json")
+                    .expect("Failed to save layouts");
             }
             (Some(layout_index), false) => {
                 println!(
                     "Update layout: {:?}",
                     current_layout.keys().cloned().collect::<HashSet<_>>()
                 );
-                state.saved_layouts[layout_index] = current_layout;
+                state.layout_data.layouts[layout_index] = current_layout;
+                state
+                    .save_layouts("config.json")
+                    .expect("Failed to save layouts");
             }
             (Some(layout_index), true) => {
                 println!(
                     "Apply layout: {:?}",
-                    state.saved_layouts[layout_index]
+                    state.layout_data.layouts[layout_index]
                         .keys()
                         .cloned()
                         .collect::<HashSet<_>>()
                 );
-                let identity_to_configuration = &state.saved_layouts[layout_index];
+                let identity_to_configuration = &state.layout_data.layouts[layout_index];
                 let new_configuration = proxy.create_configuration(serial, qhandle, ());
                 for (identity, configuration) in identity_to_configuration.iter() {
                     let id = state

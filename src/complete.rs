@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use serde::{Deserialize, Serialize};
 use wayland_client::backend::ObjectId;
 use wayland_protocols_wlr::output_management::v1::client::{
     zwlr_output_head_v1::ZwlrOutputHeadV1, zwlr_output_mode_v1::ZwlrOutputModeV1,
@@ -22,7 +23,7 @@ pub struct Head {
     pub configuration: Option<HeadConfiguration>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct HeadIdentity {
     pub name: String,
     pub description: String,
@@ -125,7 +126,7 @@ pub struct ModeState {
     pub mode: Mode,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Mode {
     pub size: (u32, u32),
     pub refresh: Option<u32>,

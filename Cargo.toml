@@ -5,5 +5,6 @@ edition = "2021"
 
 [dependencies]
 serde = { version = "1.0.210", features = ["serde_derive"] }
+serde_json = "1.0.132"
 wayland-client = "0.31.6"
 wayland-protocols-wlr = { version = "0.3.4", features = ["client"] }

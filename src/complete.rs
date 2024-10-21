@@ -1,11 +1,14 @@
 use std::collections::HashMap;
 
-use wayland_client::{backend::ObjectId, protocol::wl_output::Transform};
+use wayland_client::backend::ObjectId;
 use wayland_protocols_wlr::output_management::v1::client::{
     zwlr_output_head_v1::ZwlrOutputHeadV1, zwlr_output_mode_v1::ZwlrOutputModeV1,
 };
 
-use crate::partial::{PartialHead, PartialHeadState, PartialMode, PartialModeState};
+use crate::{
+    partial::{PartialHead, PartialHeadState, PartialMode, PartialModeState},
+    serde::Transform,
+};
 
 pub struct HeadState {
     pub proxy: ZwlrOutputHeadV1,

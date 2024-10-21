@@ -2,13 +2,11 @@ use std::collections::{HashMap, HashSet};
 
 use complete::{Head, HeadConfiguration, HeadIdentity, HeadState, Mode, ModeState};
 use partial::{PartialHead, PartialHeadState, PartialModeState, PartialObjects};
+use serde::Transform;
 use wayland_client::{
     backend::ObjectId,
     event_created_child,
-    protocol::{
-        wl_output::Transform,
-        wl_registry::{self, WlRegistry},
-    },
+    protocol::wl_registry::{self, WlRegistry},
     Connection, Dispatch, Proxy,
 };
 use wayland_protocols_wlr::output_management::v1::client::{
@@ -21,6 +19,7 @@ use wayland_protocols_wlr::output_management::v1::client::{
 
 mod complete;
 mod partial;
+mod serde;
 
 fn main() {
     let connection = Connection::connect_to_env().expect("Failed to establish a connection");
@@ -96,7 +95,7 @@ impl SavedConfiguration {
         }
         new_configuration_head.set_position(self.position.0 as i32, self.position.1 as i32);
         new_configuration_head.set_scale(self.scale);
-        new_configuration_head.set_transform(self.transform);
+        new_configuration_head.set_transform(self.transform.into());
         if let Some(adaptive_sync) = self.adaptive_sync {
             new_configuration_head.set_adaptive_sync(if adaptive_sync {
                 AdaptiveSyncState::Enabled
@@ -433,6 +432,7 @@ impl Dispatch<ZwlrOutputHeadV1, ()> for AppData {
                 let transform = transform
                     .into_result()
                     .expect("Transform is an invalid variant");
+                let transform = transform.try_into().expect("Transform does not match");
                 match head_state {
                     HeadState::Partial(partial_head) => {
                         partial_head.transform = Some(transform);

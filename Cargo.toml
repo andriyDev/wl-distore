@@ -4,5 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+serde = { version = "1.0.210", features = ["serde_derive"] }
 wayland-client = "0.31.6"
 wayland-protocols-wlr = { version = "0.3.4", features = ["client"] }

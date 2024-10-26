@@ -213,12 +213,11 @@ pub struct Mode {
 }
 
 impl TryFrom<PartialMode> for Mode {
-    // TODO: Make an actual error type.
-    type Error = ();
+    type Error = CreateModeError;
 
     fn try_from(value: PartialMode) -> Result<Self, Self::Error> {
         let Some(size) = value.size else {
-            return Err(());
+            return Err(CreateModeError::MissingSize);
         };
         Ok(Self {
             size,
@@ -228,8 +227,7 @@ impl TryFrom<PartialMode> for Mode {
 }
 
 impl TryFrom<PartialModeState> for ModeState {
-    // TODO: Make an actual error type.
-    type Error = ();
+    type Error = CreateModeError;
 
     fn try_from(value: PartialModeState) -> Result<Self, Self::Error> {
         Ok(Self {
@@ -237,4 +235,10 @@ impl TryFrom<PartialModeState> for ModeState {
             mode: value.mode.try_into()?,
         })
     }
+}
+
+#[derive(Debug, Error)]
+pub enum CreateModeError {
+    #[error("Missing required Size property for new mode.")]
+    MissingSize,
 }

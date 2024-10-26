@@ -1,10 +1,10 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{hash_map::Entry, HashMap, HashSet},
     path::PathBuf,
 };
 
 use clap::{Parser, Subcommand};
-use complete::{Head, HeadIdentity, HeadState, ModeState};
+use complete::{HeadIdentity, HeadState, ModeState};
 use partial::{PartialHead, PartialHeadState, PartialModeState, PartialObjects};
 use serde::{LayoutData, SavedConfiguration};
 use tracing::{debug, info};
@@ -246,16 +246,28 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
             );
         }
         for (id, partial_head) in state.partial_objects.id_to_head.drain() {
-            let head: HeadState = HeadState::create_from_partial(partial_head, &state.id_to_mode)
-                .expect("Done is called, so the partial head should be well-defined");
-            assert!(
-                state
-                    .head_identity_to_id
-                    .insert(head.head.identity.clone(), id.clone())
-                    .is_none(),
-                "Head identities should be unique."
-            );
-            state.id_to_head.insert(id, head);
+            match state.id_to_head.entry(id.clone()) {
+                Entry::Vacant(entry) => {
+                    let head: HeadState =
+                        HeadState::create_from_partial(partial_head, &state.id_to_mode)
+                            .expect("Done is called, so the partial head should be well-defined");
+                    assert!(
+                        state
+                            .head_identity_to_id
+                            .insert(head.head.identity.clone(), id)
+                            .is_none(),
+                        "Head identities should be unique."
+                    );
+                    entry.insert(head);
+                }
+                Entry::Occupied(mut entry) => {
+                    entry
+                        .get_mut()
+                        .head
+                        .apply_partial(partial_head.head, &state.id_to_mode)
+                        .expect("Failed to apply partial to existing head.");
+                }
+            }
         }
 
         let current_layout = state
@@ -328,21 +340,15 @@ impl Dispatch<ZwlrOutputHeadV1, ()> for AppData {
         _conn: &Connection,
         _qhandle: &wayland_client::QueueHandle<Self>,
     ) {
-        enum HeadState<'a> {
-            Partial(&'a mut PartialHead),
-            Full(&'a mut Head),
-        }
-        let head_state =
-            if let Some(partial_head) = state.partial_objects.id_to_head.get_mut(&proxy.id()) {
-                HeadState::Partial(&mut partial_head.head)
-            } else if let Some(head) = state.id_to_head.get_mut(&proxy.id()) {
-                HeadState::Full(&mut head.head)
-            } else {
-                panic!(
-                    "This proxy {} does not correspond to a previously existing head.",
-                    proxy.id()
-                )
-            };
+        let partial_head = &mut state
+            .partial_objects
+            .id_to_head
+            .entry(proxy.id())
+            .or_insert_with(|| PartialHeadState {
+                proxy: proxy.clone(),
+                head: PartialHead::default(),
+            })
+            .head;
         debug!("Received Head event for head={:?}: {event:?}", proxy.id());
         match event {
             zwlr_output_head_v1::Event::Finished => {
@@ -361,58 +367,21 @@ impl Dispatch<ZwlrOutputHeadV1, ()> for AppData {
                 state.apply_configuration = true;
             }
             zwlr_output_head_v1::Event::Name { name } => {
-                let HeadState::Partial(partial_head) = head_state else {
-                    panic!(
-                        "Received identity event Name for head {}, which is already done:w
-                    ",
-                        proxy.id()
-                    );
-                };
                 partial_head.name = Some(name);
             }
             zwlr_output_head_v1::Event::Description { description } => {
-                let HeadState::Partial(partial_head) = head_state else {
-                    panic!(
-                        "Received identity event Description for head {}, which is already done",
-                        proxy.id()
-                    );
-                };
                 partial_head.description = Some(description);
             }
             zwlr_output_head_v1::Event::Make { make } => {
-                let HeadState::Partial(partial_head) = head_state else {
-                    panic!(
-                        "Received identity event Make for head {}, which is already done",
-                        proxy.id()
-                    );
-                };
                 partial_head.make = Some(make);
             }
             zwlr_output_head_v1::Event::Model { model } => {
-                let HeadState::Partial(partial_head) = head_state else {
-                    panic!(
-                        "Received identity event Model for head {}, which is already done",
-                        proxy.id()
-                    );
-                };
                 partial_head.model = Some(model);
             }
             zwlr_output_head_v1::Event::SerialNumber { serial_number } => {
-                let HeadState::Partial(partial_head) = head_state else {
-                    panic!(
-                        "Received identity event SerialNumber for head {}, which is already done",
-                        proxy.id()
-                    );
-                };
                 partial_head.serial_number = Some(serial_number);
             }
             zwlr_output_head_v1::Event::Mode { mode } => {
-                let HeadState::Partial(partial_head) = head_state else {
-                    panic!(
-                        "Received event Mode for head {}, which is already done",
-                        proxy.id()
-                    );
-                };
                 partial_head.modes.push(mode.id());
                 state.partial_objects.id_to_mode.insert(
                     mode.id(),
@@ -423,90 +392,34 @@ impl Dispatch<ZwlrOutputHeadV1, ()> for AppData {
                 );
             }
             zwlr_output_head_v1::Event::Enabled { enabled } => {
-                let enabled = enabled > 0;
-                match head_state {
-                    HeadState::Partial(partial_head) => {
-                        partial_head.enabled = Some(enabled);
-                    }
-                    HeadState::Full(head) => {
-                        head.configuration = None;
-                    }
-                }
+                partial_head.enabled = Some(enabled > 0);
             }
-            zwlr_output_head_v1::Event::CurrentMode { mode } => match head_state {
-                HeadState::Partial(partial_head) => {
-                    partial_head.current_mode = Some(mode.id());
-                }
-                HeadState::Full(head) => {
-                    let configuration = head
-                        .configuration
-                        .as_mut()
-                        .expect("Received a CurrentMode event while head is disabled");
-                    configuration.current_mode = Some(mode.id());
-                }
-            },
-            zwlr_output_head_v1::Event::Position { x, y } => match head_state {
-                HeadState::Partial(partial_head) => {
-                    partial_head.position = Some((x as u32, y as u32));
-                }
-                HeadState::Full(head) => {
-                    let configuration = head
-                        .configuration
-                        .as_mut()
-                        .expect("Received a Position event while head is disabled");
-                    configuration.position = (x as u32, y as u32);
-                }
-            },
+            zwlr_output_head_v1::Event::CurrentMode { mode } => {
+                partial_head.current_mode = Some(mode.id());
+            }
+            zwlr_output_head_v1::Event::Position { x, y } => {
+                partial_head.position = Some((x as u32, y as u32));
+            }
             zwlr_output_head_v1::Event::Transform { transform } => {
                 let transform = transform
                     .into_result()
                     .expect("Transform is an invalid variant");
                 let transform = transform.try_into().expect("Transform does not match");
-                match head_state {
-                    HeadState::Partial(partial_head) => {
-                        partial_head.transform = Some(transform);
-                    }
-                    HeadState::Full(head) => {
-                        let configuration = head
-                            .configuration
-                            .as_mut()
-                            .expect("Received a Transform event while head is disabled");
-                        configuration.transform = transform;
-                    }
-                }
+                partial_head.transform = Some(transform);
             }
-            zwlr_output_head_v1::Event::Scale { scale } => match head_state {
-                HeadState::Partial(partial_head) => {
-                    partial_head.scale = Some(scale);
-                }
-                HeadState::Full(head) => {
-                    let configuration = head
-                        .configuration
-                        .as_mut()
-                        .expect("Received a Scale event while head is disabled");
-                    configuration.scale = scale;
-                }
-            },
+            zwlr_output_head_v1::Event::Scale { scale } => {
+                partial_head.scale = Some(scale);
+            }
             zwlr_output_head_v1::Event::AdaptiveSync { state } => {
                 let state = state
                     .into_result()
                     .expect("Adaptive sync is an invalid variant");
                 let state = match state {
-                    AdaptiveSyncState::Enabled => true,
-                    _ => false,
+                    AdaptiveSyncState::Enabled => Some(true),
+                    AdaptiveSyncState::Disabled => Some(false),
+                    _ => None,
                 };
-                match head_state {
-                    HeadState::Partial(partial_head) => {
-                        partial_head.adaptive_sync = Some(state);
-                    }
-                    HeadState::Full(head) => {
-                        let configuration = head
-                            .configuration
-                            .as_mut()
-                            .expect("Received a AdaptiveSync event while head is disabled");
-                        configuration.adaptive_sync = Some(state);
-                    }
-                }
+                partial_head.adaptive_sync = state;
             }
             _ => {}
         }

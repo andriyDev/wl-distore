@@ -23,6 +23,60 @@ pub struct PartialHead {
     pub adaptive_sync: Option<bool>,
 }
 
+impl PartialHead {
+    pub fn get_assigned_immutable_property(&self) -> Option<ImmutableProperty> {
+        if self.name.is_some() {
+            Some(ImmutableProperty::Name)
+        } else if self.description.is_some() {
+            Some(ImmutableProperty::Description)
+        } else if self.make.is_some() {
+            Some(ImmutableProperty::Make)
+        } else if self.model.is_some() {
+            Some(ImmutableProperty::Model)
+        } else if self.serial_number.is_some() {
+            Some(ImmutableProperty::SerialNumber)
+        } else {
+            None
+        }
+    }
+
+    pub fn get_assigned_configuration_property(&self) -> Option<ConfigurationProperty> {
+        if self.current_mode.is_some() {
+            Some(ConfigurationProperty::CurrentMode)
+        } else if self.position.is_some() {
+            Some(ConfigurationProperty::Position)
+        } else if self.transform.is_some() {
+            Some(ConfigurationProperty::Transform)
+        } else if self.scale.is_some() {
+            Some(ConfigurationProperty::Scale)
+        } else if self.adaptive_sync.is_some() {
+            Some(ConfigurationProperty::AdaptiveSync)
+        } else {
+            None
+        }
+    }
+}
+
+/// A property that is immutable after a head has been created.
+#[derive(Debug, Clone, Copy)]
+pub enum ImmutableProperty {
+    Name,
+    Description,
+    Make,
+    Model,
+    SerialNumber,
+}
+
+/// A property about the configuration of an enabled head. Note we intentionally exclude Enabled.
+#[derive(Debug, Clone, Copy)]
+pub enum ConfigurationProperty {
+    CurrentMode,
+    Position,
+    Transform,
+    Scale,
+    AdaptiveSync,
+}
+
 pub struct PartialHeadState {
     pub proxy: ZwlrOutputHeadV1,
     pub head: PartialHead,

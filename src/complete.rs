@@ -41,65 +41,108 @@ pub struct HeadConfiguration {
     pub adaptive_sync: Option<bool>,
 }
 
+impl Default for HeadConfiguration {
+    fn default() -> Self {
+        Self {
+            current_mode: None,
+            position: (0, 0),
+            transform: Transform::Normal,
+            scale: 1.0,
+            adaptive_sync: None,
+        }
+    }
+}
+
 impl Head {
     // TODO: Make an actual error type.
     fn create_from_partial(
-        value: PartialHead,
+        mut value: PartialHead,
         id_to_mode: &HashMap<ObjectId, ModeState>,
     ) -> Result<Self, ()> {
-        let Some(name) = value.name else {
+        let Some(name) = std::mem::take(&mut value.name) else {
             return Err(());
         };
-        let Some(description) = value.description else {
+        let Some(description) = std::mem::take(&mut value.description) else {
             return Err(());
         };
-        let Some(enabled) = value.enabled else {
+        if value.enabled.is_none() {
+            // Make sure the first instance gets the Enabled event.
             return Err(());
-        };
-
-        let mut configuration = None;
-        if enabled {
-            let Some(position) = value.position else {
-                return Err(());
-            };
-            let Some(transform) = value.transform else {
-                return Err(());
-            };
-            let Some(scale) = value.scale else {
-                return Err(());
-            };
-            configuration = Some(HeadConfiguration {
-                position,
-                transform,
-                scale,
-                current_mode: value.current_mode,
-                adaptive_sync: value.adaptive_sync,
-            });
         }
 
-        Ok(Head {
+        let mut head = Self {
             identity: HeadIdentity {
                 name,
                 description,
-                make: value.make,
-                model: value.model,
-                serial_number: value.serial_number,
+                make: std::mem::take(&mut value.make),
+                model: std::mem::take(&mut value.model),
+                serial_number: std::mem::take(&mut value.serial_number),
             },
-            mode_to_id: value
-                .modes
-                .iter()
-                .map(|id| {
-                    (
-                        id_to_mode
-                            .get(id)
-                            .map(|mode_state| mode_state.mode.clone())
-                            .expect("Head contains unknown mode"),
-                        id.clone(),
-                    )
-                })
-                .collect(),
-            configuration,
-        })
+            mode_to_id: Default::default(),
+            configuration: None,
+        };
+
+        head.apply_partial(value, id_to_mode)?;
+        Ok(head)
+    }
+
+    /// Sets the values in `partial` on `self`. Returns an error if any immutable property is set,
+    /// or a disabled head has any configuration properties set on `partial`.
+    // TODO: Make an actual error type.
+    pub fn apply_partial(
+        &mut self,
+        partial: PartialHead,
+        id_to_mode: &HashMap<ObjectId, ModeState>,
+    ) -> Result<(), ()> {
+        if partial.get_assigned_immutable_property().is_some() {
+            return Err(());
+        }
+
+        self.mode_to_id.extend(partial.modes.iter().map(|id| {
+            (
+                id_to_mode
+                    .get(id)
+                    .map(|mode_state| mode_state.mode.clone())
+                    .expect("Head contains unknown mode"),
+                id.clone(),
+            )
+        }));
+
+        if let Some(enabled) = partial.enabled {
+            if !enabled {
+                self.configuration = None;
+
+                if partial.get_assigned_configuration_property().is_some() {
+                    return Err(());
+                }
+                return Ok(());
+            } else {
+                self.configuration = Some(Default::default());
+            }
+        }
+
+        let Some(configuration) = self.configuration.as_mut() else {
+            // Either a head was already disabled, in which we shouldn't have gotten any
+            // configuration events, or the head just got disabled, so we already returned earlier.
+            if partial.get_assigned_configuration_property().is_some() {
+                return Err(());
+            }
+            return Ok(());
+        };
+
+        configuration.current_mode = partial.current_mode;
+        if let Some(position) = partial.position {
+            configuration.position = position;
+        }
+        if let Some(transform) = partial.transform {
+            configuration.transform = transform;
+        }
+        if let Some(scale) = partial.scale {
+            configuration.scale = scale;
+        }
+        configuration.adaptive_sync = partial.adaptive_sync;
+
+        Ok(())
     }
 }
 

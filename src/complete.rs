@@ -30,7 +30,6 @@ pub struct HeadIdentity {
     pub make: Option<String>,
     pub model: Option<String>,
     pub serial_number: Option<String>,
-    pub physical_size: Option<(u32, u32)>,
 }
 
 #[derive(Clone, Debug)]
@@ -85,7 +84,6 @@ impl Head {
                 make: value.make,
                 model: value.model,
                 serial_number: value.serial_number,
-                physical_size: value.physical_size,
             },
             mode_to_id: value
                 .modes

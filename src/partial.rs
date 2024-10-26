@@ -14,7 +14,6 @@ pub struct PartialHead {
     pub make: Option<String>,
     pub model: Option<String>,
     pub serial_number: Option<String>,
-    pub physical_size: Option<(u32, u32)>,
     pub enabled: Option<bool>,
     pub modes: Vec<ObjectId>,
     pub current_mode: Option<ObjectId>,

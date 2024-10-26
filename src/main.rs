@@ -406,15 +406,6 @@ impl Dispatch<ZwlrOutputHeadV1, ()> for AppData {
                 };
                 partial_head.serial_number = Some(serial_number);
             }
-            zwlr_output_head_v1::Event::PhysicalSize { width, height } => {
-                let HeadState::Partial(partial_head) = head_state else {
-                    panic!(
-                        "Received identity event PhysicalSize for head {}, which is already done",
-                        proxy.id()
-                    );
-                };
-                partial_head.physical_size = Some((width as u32, height as u32));
-            }
             zwlr_output_head_v1::Event::Mode { mode } => {
                 let HeadState::Partial(partial_head) = head_state else {
                     panic!(

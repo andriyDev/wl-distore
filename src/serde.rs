@@ -146,7 +146,9 @@ impl LayoutData {
 
     /// Saves self to the file at `path`.
     pub fn save(&self, path: &Path) -> Result<(), std::io::Error> {
-        // TODO: Recursively create the dir to the path.
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
         let file = std::fs::File::create(path)?;
         let saved_layout_data: SavedLayoutData = self.into();
         serde_json::to_writer(BufWriter::new(file), &saved_layout_data)?;

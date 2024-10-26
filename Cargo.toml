@@ -8,5 +8,7 @@ clap = { version = "4.5.20", features = ["derive"] }
 expanduser = "1.2.2"
 serde = { version = "1.0.210", features = ["serde_derive"] }
 serde_json = "1.0.132"
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 wayland-client = "0.31.6"
 wayland-protocols-wlr = { version = "0.3.4", features = ["client"] }

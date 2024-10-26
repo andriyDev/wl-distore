@@ -7,6 +7,8 @@ use clap::{Parser, Subcommand};
 use complete::{Head, HeadIdentity, HeadState, ModeState};
 use partial::{PartialHead, PartialHeadState, PartialModeState, PartialObjects};
 use serde::{LayoutData, SavedConfiguration};
+use tracing::{debug, info};
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 use wayland_client::{
     backend::ObjectId,
     event_created_child,
@@ -49,6 +51,12 @@ fn main() {
         eprintln!("--layouts cannot be a directory: \"{}\"", args.layouts);
         std::process::exit(1);
     }
+
+    tracing_subscriber::registry()
+        .with(fmt::layer())
+        .with(EnvFilter::from_default_env())
+        .init();
+
     let layouts = expanduser::expanduser(&args.layouts).expect("Failed to expand user for layouts");
     main_with_args(ResolvedArgs {
         layouts,
@@ -269,7 +277,7 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
             state.apply_configuration && !state.save_and_exit,
         ) {
             (None, _) => {
-                println!(
+                info!(
                     "Saved layout: {:?}",
                     current_layout.keys().cloned().collect::<HashSet<_>>()
                 );
@@ -281,7 +289,7 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
                 }
             }
             (Some(layout_index), false) => {
-                println!(
+                info!(
                     "Update layout: {:?}",
                     current_layout.keys().cloned().collect::<HashSet<_>>()
                 );
@@ -293,7 +301,7 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
                 }
             }
             (Some(layout_index), true) => {
-                println!(
+                info!(
                     "Apply layout: {:?}",
                     state.layout_data.layouts[layout_index]
                         .keys()
@@ -335,6 +343,7 @@ impl Dispatch<ZwlrOutputHeadV1, ()> for AppData {
                     proxy.id()
                 )
             };
+        debug!("Received Head event for head={:?}: {event:?}", proxy.id());
         match event {
             zwlr_output_head_v1::Event::Finished => {
                 state.partial_objects.id_to_head.remove(&proxy.id());
@@ -527,6 +536,7 @@ impl Dispatch<ZwlrOutputModeV1, ()> for AppData {
         _qhandle: &wayland_client::QueueHandle<Self>,
     ) {
         let id = proxy.id();
+        debug!("Received Mode event for mode={:?}: {event:?}", proxy.id());
         match event {
             zwlr_output_mode_v1::Event::Size { width, height } => {
                 let partial_mode = state

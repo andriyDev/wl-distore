@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    io::{BufReader, BufWriter, ErrorKind},
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -116,14 +119,44 @@ impl SavedConfiguration {
     }
 }
 
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct LayoutData {
     pub layouts: Vec<HashMap<HeadIdentity, Option<SavedConfiguration>>>,
 }
 
+impl LayoutData {
+    /// Loads an instance from `path`. Returns an empty instance if the file is not found (since
+    /// that indicates this is the first run).
+    pub fn load(path: &str) -> Result<Self, std::io::Error> {
+        let file = match std::fs::File::open(path) {
+            Ok(file) => file,
+            Err(err) => {
+                return if err.kind() == ErrorKind::NotFound {
+                    Ok(Self {
+                        layouts: Default::default(),
+                    })
+                } else {
+                    Err(err)
+                }
+            }
+        };
+        let saved_layout_data: SavedLayoutData = serde_json::from_reader(BufReader::new(file))?;
+        Ok((&saved_layout_data).into())
+    }
+
+    /// Saves self to the file at `path`.
+    pub fn save(&self, path: &str) -> Result<(), std::io::Error> {
+        // TODO: Recursively create the dir to the path.
+        let file = std::fs::File::create(path)?;
+        let saved_layout_data: SavedLayoutData = self.into();
+        serde_json::to_writer(BufWriter::new(file), &saved_layout_data)?;
+        Ok(())
+    }
+}
+
 #[derive(Default, Serialize, Deserialize)]
-pub struct SavedLayoutData {
-    pub layouts: Vec<Vec<(HeadIdentity, Option<SavedConfiguration>)>>,
+struct SavedLayoutData {
+    layouts: Vec<Vec<(HeadIdentity, Option<SavedConfiguration>)>>,
 }
 
 impl From<&SavedLayoutData> for LayoutData {

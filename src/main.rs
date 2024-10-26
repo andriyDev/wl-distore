@@ -1,11 +1,8 @@
-use std::{
-    collections::{HashMap, HashSet},
-    io::{BufReader, BufWriter, ErrorKind},
-};
+use std::collections::{HashMap, HashSet};
 
 use complete::{Head, HeadIdentity, HeadState, ModeState};
 use partial::{PartialHead, PartialHeadState, PartialModeState, PartialObjects};
-use serde::{LayoutData, SavedConfiguration, SavedLayoutData};
+use serde::{LayoutData, SavedConfiguration};
 use wayland_client::{
     backend::ObjectId,
     event_created_child,
@@ -33,16 +30,12 @@ fn main() {
 
     display.get_registry(&qhandle, ());
 
-    let mut app_data = AppData::default();
-    app_data
-        .load_layouts("config.json")
-        .expect("Failed to load layouts");
+    let mut app_data = AppData::new("config.json").expect("Failed to load layouts");
     loop {
         event_queue.blocking_dispatch(&mut app_data).unwrap();
     }
 }
 
-#[derive(Default)]
 struct AppData {
     partial_objects: PartialObjects,
     id_to_head: HashMap<ObjectId, HeadState>,
@@ -53,6 +46,17 @@ struct AppData {
 }
 
 impl AppData {
+    fn new(layout_path: &str) -> Result<Self, std::io::Error> {
+        Ok(Self {
+            partial_objects: Default::default(),
+            id_to_head: Default::default(),
+            head_identity_to_id: Default::default(),
+            id_to_mode: Default::default(),
+            apply_configuration: Default::default(),
+            layout_data: LayoutData::load(layout_path)?,
+        })
+    }
+
     fn find_layout_match(&self, query_layout: &HashSet<HeadIdentity>) -> Option<usize> {
         for (index, saved_layout) in self.layout_data.layouts.iter().enumerate() {
             if matches_layout(&saved_layout.keys().cloned().collect(), query_layout) {
@@ -60,28 +64,6 @@ impl AppData {
             }
         }
         None
-    }
-
-    fn load_layouts(&mut self, path: &str) -> Result<(), std::io::Error> {
-        let file = match std::fs::File::open(path) {
-            Ok(file) => file,
-            Err(err) => {
-                if err.kind() == ErrorKind::NotFound {
-                    return Ok(());
-                }
-                return Err(err);
-            }
-        };
-        let saved_layout_data: SavedLayoutData = serde_json::from_reader(BufReader::new(file))?;
-        self.layout_data = (&saved_layout_data).into();
-        Ok(())
-    }
-
-    fn save_layouts(&self, path: &str) -> Result<(), std::io::Error> {
-        let file = std::fs::File::create(path)?;
-        let saved_layout_data: SavedLayoutData = (&self.layout_data).into();
-        serde_json::to_writer(BufWriter::new(file), &saved_layout_data)?;
-        Ok(())
     }
 }
 
@@ -196,7 +178,8 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
                 );
                 state.layout_data.layouts.push(current_layout);
                 state
-                    .save_layouts("config.json")
+                    .layout_data
+                    .save("config.json")
                     .expect("Failed to save layouts");
             }
             (Some(layout_index), false) => {
@@ -206,7 +189,8 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
                 );
                 state.layout_data.layouts[layout_index] = current_layout;
                 state
-                    .save_layouts("config.json")
+                    .layout_data
+                    .save("config.json")
                     .expect("Failed to save layouts");
             }
             (Some(layout_index), true) => {

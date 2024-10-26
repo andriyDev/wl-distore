@@ -1,13 +1,17 @@
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use wayland_client::backend::ObjectId;
 use wayland_protocols_wlr::output_management::v1::client::{
     zwlr_output_head_v1::ZwlrOutputHeadV1, zwlr_output_mode_v1::ZwlrOutputModeV1,
 };
 
 use crate::{
-    partial::{PartialHead, PartialHeadState, PartialMode, PartialModeState},
+    partial::{
+        ConfigurationProperty, ImmutableProperty, PartialHead, PartialHeadState, PartialMode,
+        PartialModeState,
+    },
     serde::Transform,
 };
 
@@ -82,20 +86,21 @@ impl Head {
             configuration: None,
         };
 
-        head.apply_partial(value, id_to_mode)?;
+        head.apply_partial(value, id_to_mode).map_err(|_| ())?;
         Ok(head)
     }
 
     /// Sets the values in `partial` on `self`. Returns an error if any immutable property is set,
     /// or a disabled head has any configuration properties set on `partial`.
-    // TODO: Make an actual error type.
     pub fn apply_partial(
         &mut self,
         partial: PartialHead,
         id_to_mode: &HashMap<ObjectId, ModeState>,
-    ) -> Result<(), ()> {
-        if partial.get_assigned_immutable_property().is_some() {
-            return Err(());
+    ) -> Result<(), ApplyPartialHeadError> {
+        if let Some(immutable_property) = partial.get_assigned_immutable_property() {
+            return Err(ApplyPartialHeadError::ImmutablePropertySet(
+                immutable_property,
+            ));
         }
 
         self.mode_to_id.extend(partial.modes.iter().map(|id| {
@@ -112,8 +117,13 @@ impl Head {
             if !enabled {
                 self.configuration = None;
 
-                if partial.get_assigned_configuration_property().is_some() {
-                    return Err(());
+                if let Some(configuration_property) = partial.get_assigned_configuration_property()
+                {
+                    return Err(
+                        ApplyPartialHeadError::ConfigurationPropertyOnDisabledHeadSet(
+                            configuration_property,
+                        ),
+                    );
                 }
                 return Ok(());
             } else {
@@ -124,8 +134,12 @@ impl Head {
         let Some(configuration) = self.configuration.as_mut() else {
             // Either a head was already disabled, in which we shouldn't have gotten any
             // configuration events, or the head just got disabled, so we already returned earlier.
-            if partial.get_assigned_configuration_property().is_some() {
-                return Err(());
+            if let Some(configuration_property) = partial.get_assigned_configuration_property() {
+                return Err(
+                    ApplyPartialHeadError::ConfigurationPropertyOnDisabledHeadSet(
+                        configuration_property,
+                    ),
+                );
             }
             return Ok(());
         };
@@ -157,6 +171,14 @@ impl HeadState {
             head: Head::create_from_partial(value.head, id_to_mode)?,
         })
     }
+}
+
+#[derive(Debug, Error)]
+pub enum ApplyPartialHeadError {
+    #[error("The immutable property {0:?} is set, trying to mutate an existing head.")]
+    ImmutablePropertySet(ImmutableProperty),
+    #[error("The configuration property {0:?} is set on a disabled head.")]
+    ConfigurationPropertyOnDisabledHeadSet(ConfigurationProperty),
 }
 
 pub struct ModeState {

@@ -101,6 +101,46 @@ impl AppData {
             .save(&self.layout_path)
             .expect("Failed to save layouts");
     }
+
+    /// Applies the layout at `index`. `serial` is the serial value provided from the most recent
+    /// `Done` event.
+    fn apply_layout(
+        &self,
+        index: usize,
+        output_manager: &ZwlrOutputManagerV1,
+        qhandle: &wayland_client::QueueHandle<Self>,
+        serial: u32,
+    ) {
+        let identity_to_configuration = &self.layout_data.layouts[index];
+        let new_configuration = output_manager.create_configuration(serial, qhandle, ());
+        for (identity, configuration) in identity_to_configuration.iter() {
+            let id = self
+                .head_identity_to_id
+                .get(identity)
+                .expect("Could not find head for matched layout");
+
+            let head_state = &self
+                .id_to_head
+                .get(&id)
+                .expect("Could not find proxy for id");
+
+            match configuration.as_ref() {
+                None => {
+                    new_configuration.disable_head(&head_state.proxy);
+                }
+                Some(configuration) => {
+                    let mut new_configuration_head =
+                        new_configuration.enable_head(&head_state.proxy, qhandle, ());
+                    configuration.apply(
+                        &mut new_configuration_head,
+                        &head_state.head.mode_to_id,
+                        &self.id_to_mode,
+                    );
+                }
+            }
+        }
+        new_configuration.apply();
+    }
 }
 
 fn matches_layout(layout: &HashSet<HeadIdentity>, query_layout: &HashSet<HeadIdentity>) -> bool {
@@ -231,35 +271,7 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
                         .cloned()
                         .collect::<HashSet<_>>()
                 );
-                let identity_to_configuration = &state.layout_data.layouts[layout_index];
-                let new_configuration = proxy.create_configuration(serial, qhandle, ());
-                for (identity, configuration) in identity_to_configuration.iter() {
-                    let id = state
-                        .head_identity_to_id
-                        .get(identity)
-                        .expect("Could not find head for matched layout");
-
-                    let head_state = &state
-                        .id_to_head
-                        .get(&id)
-                        .expect("Could not find proxy for id");
-
-                    match configuration.as_ref() {
-                        None => {
-                            new_configuration.disable_head(&head_state.proxy);
-                        }
-                        Some(configuration) => {
-                            let mut new_configuration_head =
-                                new_configuration.enable_head(&head_state.proxy, qhandle, ());
-                            configuration.apply(
-                                &mut new_configuration_head,
-                                &head_state.head.mode_to_id,
-                                &state.id_to_mode,
-                            );
-                        }
-                    }
-                }
-                new_configuration.apply();
+                state.apply_layout(layout_index, proxy, qhandle, serial);
             }
         }
         state.apply_configuration = false;

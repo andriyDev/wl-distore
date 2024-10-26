@@ -35,6 +35,11 @@ struct Args {
 
 fn main() {
     let args = Args::parse();
+    // Sanity check that the layouts path is meant to be a path to a file.
+    if args.layouts.ends_with("/") {
+        eprintln!("--layouts cannot be a directory: \"{}\"", args.layouts);
+        std::process::exit(1);
+    }
     let layouts = expanduser::expanduser(&args.layouts).expect("Failed to expand user for layouts");
     main_with_args(ResolvedArgs { layouts });
 }

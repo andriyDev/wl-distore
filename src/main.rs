@@ -53,7 +53,7 @@ impl AppData {
             head_identity_to_id: Default::default(),
             id_to_mode: Default::default(),
             apply_configuration: Default::default(),
-            layout_data: LayoutData::load(layout_path)?,
+            layout_data: LayoutData::load(layout_path.as_ref())?,
         })
     }
 
@@ -179,7 +179,7 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
                 state.layout_data.layouts.push(current_layout);
                 state
                     .layout_data
-                    .save("config.json")
+                    .save("config.json".as_ref())
                     .expect("Failed to save layouts");
             }
             (Some(layout_index), false) => {
@@ -190,7 +190,7 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
                 state.layout_data.layouts[layout_index] = current_layout;
                 state
                     .layout_data
-                    .save("config.json")
+                    .save("config.json".as_ref())
                     .expect("Failed to save layouts");
             }
             (Some(layout_index), true) => {

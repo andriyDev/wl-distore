@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     io::{BufReader, BufWriter, ErrorKind},
+    path::Path,
 };
 
 use serde::{Deserialize, Serialize};
@@ -127,7 +128,7 @@ pub struct LayoutData {
 impl LayoutData {
     /// Loads an instance from `path`. Returns an empty instance if the file is not found (since
     /// that indicates this is the first run).
-    pub fn load(path: &str) -> Result<Self, std::io::Error> {
+    pub fn load(path: &Path) -> Result<Self, std::io::Error> {
         let file = match std::fs::File::open(path) {
             Ok(file) => file,
             Err(err) => {
@@ -145,7 +146,7 @@ impl LayoutData {
     }
 
     /// Saves self to the file at `path`.
-    pub fn save(&self, path: &str) -> Result<(), std::io::Error> {
+    pub fn save(&self, path: &Path) -> Result<(), std::io::Error> {
         // TODO: Recursively create the dir to the path.
         let file = std::fs::File::create(path)?;
         let saved_layout_data: SavedLayoutData = self.into();

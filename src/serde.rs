@@ -120,7 +120,6 @@ impl SavedConfiguration {
     }
 }
 
-#[derive(Serialize, Deserialize)]
 pub struct LayoutData {
     pub layouts: Vec<HashMap<HeadIdentity, Option<SavedConfiguration>>>,
 }

@@ -58,20 +58,19 @@ impl Default for HeadConfiguration {
 }
 
 impl Head {
-    // TODO: Make an actual error type.
     fn create_from_partial(
         mut value: PartialHead,
         id_to_mode: &HashMap<ObjectId, ModeState>,
-    ) -> Result<Self, ()> {
+    ) -> Result<Self, CreateHeadError> {
         let Some(name) = std::mem::take(&mut value.name) else {
-            return Err(());
+            return Err(CreateHeadError::MissingName);
         };
         let Some(description) = std::mem::take(&mut value.description) else {
-            return Err(());
+            return Err(CreateHeadError::MissingDescription);
         };
         if value.enabled.is_none() {
             // Make sure the first instance gets the Enabled event.
-            return Err(());
+            return Err(CreateHeadError::MissingEnabled);
         }
 
         let mut head = Self {
@@ -86,7 +85,17 @@ impl Head {
             configuration: None,
         };
 
-        head.apply_partial(value, id_to_mode).map_err(|_| ())?;
+        match head.apply_partial(value, id_to_mode) {
+            Ok(()) => {}
+            Err(ApplyPartialHeadError::ConfigurationPropertyOnDisabledHeadSet(property)) => {
+                return Err(CreateHeadError::ConfigurationPropertyOnDisabledHeadSet(
+                    property,
+                ));
+            }
+            Err(ApplyPartialHeadError::ImmutablePropertySet(property)) => {
+                panic!("The immutable property {property:?} is set, which should be impossible since the head was created successfully.");
+            }
+        }
         Ok(head)
     }
 
@@ -161,16 +170,27 @@ impl Head {
 }
 
 impl HeadState {
-    // TODO: Make an actual error type.
     pub fn create_from_partial(
         value: PartialHeadState,
         id_to_mode: &HashMap<ObjectId, ModeState>,
-    ) -> Result<Self, ()> {
+    ) -> Result<Self, CreateHeadError> {
         Ok(Self {
             proxy: value.proxy,
             head: Head::create_from_partial(value.head, id_to_mode)?,
         })
     }
+}
+
+#[derive(Debug, Error)]
+pub enum CreateHeadError {
+    #[error("Missing required Name property on new head.")]
+    MissingName,
+    #[error("Missing required Description property on new head.")]
+    MissingDescription,
+    #[error("Missing required Enabled property on new head.")]
+    MissingEnabled,
+    #[error("The configuration property {0:?} is set on a disabled head.")]
+    ConfigurationPropertyOnDisabledHeadSet(ConfigurationProperty),
 }
 
 #[derive(Debug, Error)]

@@ -6,6 +6,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
+use thiserror::Error;
 use wayland_client::{backend::ObjectId, protocol::wl_output::Transform as wayland_Transform};
 use wayland_protocols_wlr::output_management::v1::client::{
     zwlr_output_configuration_head_v1::ZwlrOutputConfigurationHeadV1,
@@ -27,8 +28,7 @@ pub enum Transform {
 }
 
 impl TryFrom<wayland_Transform> for Transform {
-    // TODO: Make an actual error type.
-    type Error = ();
+    type Error = TransformConversionError;
 
     fn try_from(value: wayland_Transform) -> Result<Self, Self::Error> {
         Ok(match value {
@@ -40,9 +40,15 @@ impl TryFrom<wayland_Transform> for Transform {
             wayland_Transform::Flipped90 => Self::Flipped90,
             wayland_Transform::Flipped180 => Self::Flipped180,
             wayland_Transform::Flipped270 => Self::Flipped270,
-            _ => return Err(()),
+            value => return Err(TransformConversionError::UnknownVariant(value)),
         })
     }
+}
+
+#[derive(Debug, Error)]
+pub enum TransformConversionError {
+    #[error("An unknown Transform variant was received: {0:?}")]
+    UnknownVariant(wayland_Transform),
 }
 
 impl Into<wayland_Transform> for Transform {
@@ -89,7 +95,6 @@ impl SavedConfiguration {
         }
     }
 
-    // TODO: Make a real error type.
     pub fn apply(
         &self,
         new_configuration_head: &mut ZwlrOutputConfigurationHeadV1,

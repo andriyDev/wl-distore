@@ -557,6 +557,12 @@ impl Dispatch<ZwlrOutputModeV1, ()> for AppData {
             zwlr_output_mode_v1::Event::Finished => {
                 state.partial_objects.id_to_mode.remove(&id);
                 state.id_to_mode.remove(&id);
+                // Go through each head and remove any modes that use the id.
+                for head in state.id_to_head.values_mut() {
+                    head.head
+                        .mode_to_id
+                        .retain(|_, mode_in_head_id| *mode_in_head_id != id);
+                }
                 proxy.release();
             }
             _ => {}

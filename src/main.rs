@@ -3,7 +3,7 @@ use std::{
     path::PathBuf,
 };
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use complete::{Head, HeadIdentity, HeadState, ModeState};
 use partial::{PartialHead, PartialHeadState, PartialModeState, PartialObjects};
 use serde::{LayoutData, SavedConfiguration};
@@ -31,6 +31,15 @@ struct Args {
     /// The file to save and load layout data to/from.
     #[arg(long, default_value = "~/.local/state/wl-distore/layouts.json")]
     layouts: String,
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(Subcommand, Debug)]
+enum Command {
+    /// Saves the current layout and exits. This can be used to fix a broken config, or otherwise
+    /// adjust configuration without needing to have wl-distore watching.
+    SaveCurrent,
 }
 
 fn main() {
@@ -41,11 +50,15 @@ fn main() {
         std::process::exit(1);
     }
     let layouts = expanduser::expanduser(&args.layouts).expect("Failed to expand user for layouts");
-    main_with_args(ResolvedArgs { layouts });
+    main_with_args(ResolvedArgs {
+        layouts,
+        save_and_exit: matches!(args.command, Some(Command::SaveCurrent)),
+    });
 }
 
 struct ResolvedArgs {
     layouts: PathBuf,
+    save_and_exit: bool,
 }
 
 fn main_with_args(args: ResolvedArgs) {
@@ -57,7 +70,8 @@ fn main_with_args(args: ResolvedArgs) {
 
     display.get_registry(&qhandle, ());
 
-    let mut app_data = AppData::new(args.layouts).expect("Failed to load layouts");
+    let mut app_data =
+        AppData::new(args.layouts, args.save_and_exit).expect("Failed to load layouts");
     loop {
         event_queue.blocking_dispatch(&mut app_data).unwrap();
     }
@@ -65,6 +79,8 @@ fn main_with_args(args: ResolvedArgs) {
 
 struct AppData {
     layout_path: PathBuf,
+    save_and_exit: bool,
+
     partial_objects: PartialObjects,
     id_to_head: HashMap<ObjectId, HeadState>,
     head_identity_to_id: HashMap<HeadIdentity, ObjectId>,
@@ -74,8 +90,9 @@ struct AppData {
 }
 
 impl AppData {
-    fn new(layout_path: PathBuf) -> Result<Self, std::io::Error> {
+    fn new(layout_path: PathBuf, save_and_exit: bool) -> Result<Self, std::io::Error> {
         Ok(Self {
+            save_and_exit,
             partial_objects: Default::default(),
             id_to_head: Default::default(),
             head_identity_to_id: Default::default(),
@@ -246,7 +263,11 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
             })
             .collect::<HashMap<_, _>>();
         let layout_match = state.find_layout_match(&(current_layout.keys().cloned().collect()));
-        match (layout_match, state.apply_configuration) {
+        match (
+            layout_match,
+            // If save_and_exit is set, then we don't want to apply the layout at all.
+            state.apply_configuration && !state.save_and_exit,
+        ) {
             (None, _) => {
                 println!(
                     "Saved layout: {:?}",
@@ -254,6 +275,10 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
                 );
                 state.layout_data.layouts.push(current_layout);
                 state.save_layouts();
+                if state.save_and_exit {
+                    // Bail out after the save.
+                    std::process::exit(0);
+                }
             }
             (Some(layout_index), false) => {
                 println!(
@@ -262,6 +287,10 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
                 );
                 state.layout_data.layouts[layout_index] = current_layout;
                 state.save_layouts();
+                if state.save_and_exit {
+                    // Bail out after the save.
+                    std::process::exit(0);
+                }
             }
             (Some(layout_index), true) => {
                 println!(

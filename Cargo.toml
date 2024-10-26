@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+clap = { version = "4.5.20", features = ["derive"] }
+expanduser = "1.2.2"
 serde = { version = "1.0.210", features = ["serde_derive"] }
 serde_json = "1.0.132"
 wayland-client = "0.31.6"

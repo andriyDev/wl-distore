@@ -1,5 +1,9 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    path::PathBuf,
+};
 
+use clap::Parser;
 use complete::{Head, HeadIdentity, HeadState, ModeState};
 use partial::{PartialHead, PartialHeadState, PartialModeState, PartialObjects};
 use serde::{LayoutData, SavedConfiguration};
@@ -21,7 +25,25 @@ mod complete;
 mod partial;
 mod serde;
 
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// The file to save and load layout data to/from.
+    #[arg(long, default_value = "~/.local/state/wl-distore/layouts.json")]
+    layouts: String,
+}
+
 fn main() {
+    let args = Args::parse();
+    let layouts = expanduser::expanduser(&args.layouts).expect("Failed to expand user for layouts");
+    main_with_args(ResolvedArgs { layouts });
+}
+
+struct ResolvedArgs {
+    layouts: PathBuf,
+}
+
+fn main_with_args(args: ResolvedArgs) {
     let connection = Connection::connect_to_env().expect("Failed to establish a connection");
     let display = connection.display();
 
@@ -30,13 +52,14 @@ fn main() {
 
     display.get_registry(&qhandle, ());
 
-    let mut app_data = AppData::new("config.json").expect("Failed to load layouts");
+    let mut app_data = AppData::new(args.layouts).expect("Failed to load layouts");
     loop {
         event_queue.blocking_dispatch(&mut app_data).unwrap();
     }
 }
 
 struct AppData {
+    layout_path: PathBuf,
     partial_objects: PartialObjects,
     id_to_head: HashMap<ObjectId, HeadState>,
     head_identity_to_id: HashMap<HeadIdentity, ObjectId>,
@@ -46,14 +69,16 @@ struct AppData {
 }
 
 impl AppData {
-    fn new(layout_path: &str) -> Result<Self, std::io::Error> {
+    fn new(layout_path: PathBuf) -> Result<Self, std::io::Error> {
         Ok(Self {
             partial_objects: Default::default(),
             id_to_head: Default::default(),
             head_identity_to_id: Default::default(),
             id_to_mode: Default::default(),
             apply_configuration: Default::default(),
-            layout_data: LayoutData::load(layout_path.as_ref())?,
+            layout_data: LayoutData::load(&layout_path)?,
+            // Move after we load the layout data.
+            layout_path,
         })
     }
 
@@ -64,6 +89,12 @@ impl AppData {
             }
         }
         None
+    }
+
+    fn save_layouts(&self) {
+        self.layout_data
+            .save(&self.layout_path)
+            .expect("Failed to save layouts");
     }
 }
 
@@ -177,10 +208,7 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
                     current_layout.keys().cloned().collect::<HashSet<_>>()
                 );
                 state.layout_data.layouts.push(current_layout);
-                state
-                    .layout_data
-                    .save("config.json".as_ref())
-                    .expect("Failed to save layouts");
+                state.save_layouts();
             }
             (Some(layout_index), false) => {
                 println!(
@@ -188,10 +216,7 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
                     current_layout.keys().cloned().collect::<HashSet<_>>()
                 );
                 state.layout_data.layouts[layout_index] = current_layout;
-                state
-                    .layout_data
-                    .save("config.json".as_ref())
-                    .expect("Failed to save layouts");
+                state.save_layouts();
             }
             (Some(layout_index), true) => {
                 println!(

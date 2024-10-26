@@ -35,7 +35,7 @@ pub struct HeadIdentity {
 
 #[derive(Clone, Debug)]
 pub struct HeadConfiguration {
-    pub current_mode: ObjectId,
+    pub current_mode: Option<ObjectId>,
     pub position: (u32, u32),
     pub transform: Transform,
     pub scale: f64,
@@ -60,9 +60,6 @@ impl Head {
 
         let mut configuration = None;
         if enabled {
-            let Some(current_mode) = value.current_mode else {
-                return Err(());
-            };
             let Some(position) = value.position else {
                 return Err(());
             };
@@ -73,10 +70,10 @@ impl Head {
                 return Err(());
             };
             configuration = Some(HeadConfiguration {
-                current_mode,
                 position,
                 transform,
                 scale,
+                current_mode: value.current_mode,
                 adaptive_sync: value.adaptive_sync,
             });
         }

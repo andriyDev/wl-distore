@@ -451,7 +451,7 @@ impl Dispatch<ZwlrOutputHeadV1, ()> for AppData {
                         .configuration
                         .as_mut()
                         .expect("Received a CurrentMode event while head is disabled");
-                    configuration.current_mode = mode.id();
+                    configuration.current_mode = Some(mode.id());
                 }
             },
             zwlr_output_head_v1::Event::Position { x, y } => match head_state {

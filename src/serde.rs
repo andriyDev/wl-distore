@@ -62,7 +62,7 @@ impl Into<wayland_Transform> for Transform {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SavedConfiguration {
-    mode: Mode,
+    mode: Option<Mode>,
     position: (u32, u32),
     transform: Transform,
     scale: f64,
@@ -75,11 +75,13 @@ impl SavedConfiguration {
         id_to_mode: &HashMap<ObjectId, ModeState>,
     ) -> Self {
         SavedConfiguration {
-            mode: id_to_mode
-                .get(&configuration.current_mode)
-                .expect("The current mode doesn't exist.")
-                .mode
-                .clone(),
+            mode: configuration.current_mode.as_ref().map(|mode| {
+                id_to_mode
+                    .get(&mode)
+                    .expect("The current mode doesn't exist.")
+                    .mode
+                    .clone()
+            }),
             position: configuration.position,
             transform: configuration.transform,
             scale: configuration.scale,
@@ -94,18 +96,20 @@ impl SavedConfiguration {
         mode_to_id: &HashMap<Mode, ObjectId>,
         id_to_mode: &HashMap<ObjectId, ModeState>,
     ) {
-        if let Some(id) = mode_to_id.get(&self.mode).cloned() {
-            let proxy = &id_to_mode
-                .get(&id)
-                .expect("Missing mode for existing id")
-                .proxy;
-            new_configuration_head.set_mode(proxy);
-        } else {
-            new_configuration_head.set_custom_mode(
-                self.mode.size.0 as i32,
-                self.mode.size.1 as i32,
-                self.mode.refresh.unwrap_or(0) as i32,
-            );
+        if let Some(mode) = self.mode {
+            if let Some(id) = mode_to_id.get(&mode).cloned() {
+                let proxy = &id_to_mode
+                    .get(&id)
+                    .expect("Missing mode for existing id")
+                    .proxy;
+                new_configuration_head.set_mode(proxy);
+            } else {
+                new_configuration_head.set_custom_mode(
+                    mode.size.0 as i32,
+                    mode.size.1 as i32,
+                    mode.refresh.unwrap_or(0) as i32,
+                );
+            }
         }
         new_configuration_head.set_position(self.position.0 as i32, self.position.1 as i32);
         new_configuration_head.set_scale(self.scale);

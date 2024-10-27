@@ -3,8 +3,8 @@ use std::{
     path::PathBuf,
 };
 
-use clap::{Parser, Subcommand};
 use complete::{HeadIdentity, HeadState, ModeState};
+use config::{Args, CollectArgsError};
 use partial::{PartialHead, PartialHeadState, PartialModeState, PartialObjects};
 use serde::{LayoutData, SavedConfiguration};
 use tracing::{debug, info};
@@ -24,52 +24,29 @@ use wayland_protocols_wlr::output_management::v1::client::{
 };
 
 mod complete;
+mod config;
 mod partial;
 mod serde;
 
-#[derive(Parser, Debug)]
-#[command(version, about, long_about = None)]
-struct Args {
-    /// The file to save and load layout data to/from.
-    #[arg(long, default_value = "~/.local/state/wl-distore/layouts.json")]
-    layouts: String,
-    #[command(subcommand)]
-    command: Option<Command>,
-}
-
-#[derive(Subcommand, Debug)]
-enum Command {
-    /// Saves the current layout and exits. This can be used to fix a broken config, or otherwise
-    /// adjust configuration without needing to have wl-distore watching.
-    SaveCurrent,
-}
-
 fn main() {
-    let args = Args::parse();
-    // Sanity check that the layouts path is meant to be a path to a file.
-    if args.layouts.ends_with("/") {
-        eprintln!("--layouts cannot be a directory: \"{}\"", args.layouts);
-        std::process::exit(1);
-    }
-
     tracing_subscriber::registry()
         .with(fmt::layer())
         .with(EnvFilter::from_default_env())
         .init();
 
-    let layouts = expanduser::expanduser(&args.layouts).expect("Failed to expand user for layouts");
-    main_with_args(ResolvedArgs {
-        layouts,
-        save_and_exit: matches!(args.command, Some(Command::SaveCurrent)),
-    });
+    let args = match Args::collect() {
+        Ok(args) => args,
+        Err(CollectArgsError::LayoutsPathIsDirectory(path)) => {
+            eprintln!("--layouts cannot be a directory: \"{}\"", path);
+            std::process::exit(1);
+        }
+        err => err.expect("Failed to collect arguments"),
+    };
+
+    main_with_args(args);
 }
 
-struct ResolvedArgs {
-    layouts: PathBuf,
-    save_and_exit: bool,
-}
-
-fn main_with_args(args: ResolvedArgs) {
+fn main_with_args(args: Args) {
     let connection = Connection::connect_to_env().expect("Failed to establish a connection");
     let display = connection.display();
 

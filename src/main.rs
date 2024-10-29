@@ -37,7 +37,7 @@ fn main() {
     let args = match Args::collect() {
         Ok(args) => args,
         Err(CollectArgsError::LayoutsPathIsDirectory(path)) => {
-            eprintln!("--layouts cannot be a directory: \"{}\"", path);
+            eprintln!("Layouts file cannot be a directory: \"{}\"", path);
             std::process::exit(1);
         }
         err => err.expect("Failed to collect arguments"),

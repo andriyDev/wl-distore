@@ -192,6 +192,7 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
         _conn: &Connection,
         qhandle: &wayland_client::QueueHandle<Self>,
     ) {
+        debug!("Received Manager event: {event:?}");
         let serial = match event {
             zwlr_output_manager_v1::Event::Head { head } => {
                 // A new head was added, so try to apply a layout on the next `Done` event.
@@ -454,6 +455,10 @@ impl Dispatch<ZwlrOutputConfigurationV1, ()> for AppData {
         _conn: &Connection,
         _qhandle: &wayland_client::QueueHandle<Self>,
     ) {
+        debug!(
+            "Received Configuration event for config={:?}: {event:?}",
+            proxy.id()
+        );
         match event {
             zwlr_output_configuration_v1::Event::Succeeded => {
                 // We've applied the configuration!

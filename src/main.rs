@@ -65,8 +65,19 @@ struct AppData {
     id_to_head: HashMap<ObjectId, HeadState>,
     head_identity_to_id: HashMap<HeadIdentity, ObjectId>,
     id_to_mode: HashMap<ObjectId, ModeState>,
-    apply_configuration: bool,
+    done_action: DoneAction,
     layout_data: LayoutData,
+}
+
+#[derive(Default, Clone, Copy)]
+enum DoneAction {
+    /// Update the layout for the current head setup.
+    #[default]
+    Update,
+    /// Apply the layout for the current head setup.
+    Apply,
+    /// The next Done events corresponds to the result of an Apply action, so ignore it.
+    ApplyResult,
 }
 
 impl AppData {
@@ -76,7 +87,7 @@ impl AppData {
             id_to_head: Default::default(),
             head_identity_to_id: Default::default(),
             id_to_mode: Default::default(),
-            apply_configuration: Default::default(),
+            done_action: Default::default(),
             layout_data: LayoutData::load(&args.layouts)?,
             // Move after we load the layout data.
             args,
@@ -101,12 +112,13 @@ impl AppData {
     /// Applies the layout at `index`. `serial` is the serial value provided from the most recent
     /// `Done` event.
     fn apply_layout(
-        &self,
+        &mut self,
         index: usize,
         output_manager: &ZwlrOutputManagerV1,
         qhandle: &wayland_client::QueueHandle<Self>,
         serial: u32,
     ) {
+        self.done_action = DoneAction::ApplyResult;
         let identity_to_configuration = &self.layout_data.layouts[index];
         let new_configuration = output_manager.create_configuration(serial, qhandle, ());
         for (identity, configuration) in identity_to_configuration.iter() {
@@ -196,7 +208,7 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
         let serial = match event {
             zwlr_output_manager_v1::Event::Head { head } => {
                 // A new head was added, so try to apply a layout on the next `Done` event.
-                state.apply_configuration = true;
+                state.done_action = DoneAction::Apply;
                 state.partial_objects.id_to_head.insert(
                     head.id(),
                     PartialHeadState {
@@ -258,9 +270,13 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
         match (
             layout_match,
             // If save_and_exit is set, then we don't want to apply the layout at all.
-            state.apply_configuration && !state.args.save_and_exit,
+            if state.args.save_and_exit {
+                DoneAction::Update
+            } else {
+                state.done_action
+            },
         ) {
-            (None, _) => {
+            (None, DoneAction::Update | DoneAction::Apply) => {
                 info!(
                     "Saved layout: {:?}",
                     current_layout.keys().cloned().collect::<HashSet<_>>()
@@ -271,8 +287,13 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
                     // Bail out after the save.
                     std::process::exit(0);
                 }
+                // Ensure we go back to updating.
+                state.done_action = DoneAction::Update;
             }
-            (Some(layout_index), false) => {
+            (None, DoneAction::ApplyResult) => {
+                panic!("We applied a layout, but then that layout didn't match?");
+            }
+            (Some(layout_index), DoneAction::Update) => {
                 info!(
                     "Update layout: {:?}",
                     current_layout.keys().cloned().collect::<HashSet<_>>()
@@ -284,7 +305,7 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
                     std::process::exit(0);
                 }
             }
-            (Some(layout_index), true) => {
+            (Some(layout_index), DoneAction::Apply) => {
                 info!(
                     "Apply layout: {:?}",
                     state.layout_data.layouts[layout_index]
@@ -294,8 +315,10 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
                 );
                 state.apply_layout(layout_index, proxy, qhandle, serial);
             }
+            (Some(_), DoneAction::ApplyResult) => {
+                debug!("Ignored the Done event since this is the result of an Apply");
+            }
         }
-        state.apply_configuration = false;
     }
 
     event_created_child!(AppData, ZwlrOutputHeadV1, [
@@ -336,7 +359,7 @@ impl Dispatch<ZwlrOutputHeadV1, ()> for AppData {
                 }
                 proxy.release();
                 // This head was removed, so try to apply a layout on the next `Done` event.
-                state.apply_configuration = true;
+                state.done_action = DoneAction::Apply;
             }
             zwlr_output_head_v1::Event::Name { name } => {
                 partial_head.name = Some(name);
@@ -461,13 +484,17 @@ impl Dispatch<ZwlrOutputConfigurationV1, ()> for AppData {
         );
         match event {
             zwlr_output_configuration_v1::Event::Succeeded => {
-                // We've applied the configuration!
-                state.apply_configuration = false;
+                // We've applied the configuration! We can now get back to updating.
+                state.done_action = DoneAction::Update;
             }
-            // Do nothing if the event has been cancelled.
-            zwlr_output_configuration_v1::Event::Cancelled => {}
+            zwlr_output_configuration_v1::Event::Cancelled => {
+                // Try to apply the layout again.
+                state.done_action = DoneAction::Apply;
+            }
             zwlr_output_configuration_v1::Event::Failed => {
                 eprintln!("Failed to apply output configuration");
+                // Try to apply the layout again.
+                state.done_action = DoneAction::Apply;
             }
             _ => {}
         }

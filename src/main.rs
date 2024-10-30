@@ -1,7 +1,4 @@
-use std::{
-    collections::{hash_map::Entry, HashMap, HashSet},
-    path::PathBuf,
-};
+use std::collections::{hash_map::Entry, HashMap, HashSet};
 
 use complete::{HeadIdentity, HeadState, ModeState};
 use config::{Args, CollectArgsError};
@@ -55,16 +52,14 @@ fn main_with_args(args: Args) {
 
     display.get_registry(&qhandle, ());
 
-    let mut app_data =
-        AppData::new(args.layouts, args.save_and_exit).expect("Failed to load layouts");
+    let mut app_data = AppData::new(args).expect("Failed to load layouts");
     loop {
         event_queue.blocking_dispatch(&mut app_data).unwrap();
     }
 }
 
 struct AppData {
-    layout_path: PathBuf,
-    save_and_exit: bool,
+    args: Args,
 
     partial_objects: PartialObjects,
     id_to_head: HashMap<ObjectId, HeadState>,
@@ -75,17 +70,16 @@ struct AppData {
 }
 
 impl AppData {
-    fn new(layout_path: PathBuf, save_and_exit: bool) -> Result<Self, std::io::Error> {
+    fn new(args: Args) -> Result<Self, std::io::Error> {
         Ok(Self {
-            save_and_exit,
             partial_objects: Default::default(),
             id_to_head: Default::default(),
             head_identity_to_id: Default::default(),
             id_to_mode: Default::default(),
             apply_configuration: Default::default(),
-            layout_data: LayoutData::load(&layout_path)?,
+            layout_data: LayoutData::load(&args.layouts)?,
             // Move after we load the layout data.
-            layout_path,
+            args,
         })
     }
 
@@ -100,7 +94,7 @@ impl AppData {
 
     fn save_layouts(&self) {
         self.layout_data
-            .save(&self.layout_path)
+            .save(&self.args.layouts)
             .expect("Failed to save layouts");
     }
 
@@ -263,7 +257,7 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
         match (
             layout_match,
             // If save_and_exit is set, then we don't want to apply the layout at all.
-            state.apply_configuration && !state.save_and_exit,
+            state.apply_configuration && !state.args.save_and_exit,
         ) {
             (None, _) => {
                 info!(
@@ -272,7 +266,7 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
                 );
                 state.layout_data.layouts.push(current_layout);
                 state.save_layouts();
-                if state.save_and_exit {
+                if state.args.save_and_exit {
                     // Bail out after the save.
                     std::process::exit(0);
                 }
@@ -284,7 +278,7 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
                 );
                 state.layout_data.layouts[layout_index] = current_layout;
                 state.save_layouts();
-                if state.save_and_exit {
+                if state.args.save_and_exit {
                     // Bail out after the save.
                     std::process::exit(0);
                 }

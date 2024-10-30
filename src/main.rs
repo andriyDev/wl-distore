@@ -1,4 +1,8 @@
-use std::collections::{hash_map::Entry, HashMap, HashSet};
+use std::{
+    collections::{hash_map::Entry, HashMap, HashSet},
+    process::Command,
+    sync::Arc,
+};
 
 use complete::{HeadIdentity, HeadState, ModeState};
 use config::{Args, CollectArgsError};
@@ -492,6 +496,9 @@ impl Dispatch<ZwlrOutputConfigurationV1, ()> for AppData {
             zwlr_output_configuration_v1::Event::Succeeded => {
                 // We've applied the configuration! We can now get back to updating.
                 state.done_action = DoneAction::Update;
+                if let Some(apply_command) = state.args.apply_command.clone() {
+                    run_command(apply_command);
+                }
             }
             zwlr_output_configuration_v1::Event::Cancelled => {
                 // Try to apply the layout again.
@@ -519,4 +526,29 @@ impl Dispatch<ZwlrOutputConfigurationHeadV1, ()> for AppData {
     ) {
         // There are no events here.
     }
+}
+
+fn run_command(command: Arc<str>) {
+    std::thread::spawn(
+        move || match Command::new("sh").arg("-c").arg(command.as_ref()).output() {
+            Ok(output) => {
+                if output.status.success() {
+                    debug!(
+                        "post_exec command output:\nstdout={}\nstderr={}",
+                        String::from_utf8_lossy(&output.stdout),
+                        String::from_utf8_lossy(&output.stderr),
+                    );
+                } else {
+                    error!(
+                        "post_exec command failed with output:\nstdout={}\nstderr={}",
+                        String::from_utf8_lossy(&output.stdout),
+                        String::from_utf8_lossy(&output.stderr),
+                    );
+                }
+            }
+            Err(err) => {
+                error!("Failed to run post_exec command: {err}");
+            }
+        },
+    );
 }

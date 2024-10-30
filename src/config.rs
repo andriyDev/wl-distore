@@ -1,6 +1,7 @@
 use std::{
     io::ErrorKind,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use clap::{Parser, Subcommand};
@@ -9,6 +10,7 @@ use thiserror::Error;
 
 pub struct Args {
     pub layouts: PathBuf,
+    pub apply_command: Option<Arc<str>>,
     pub save_and_exit: bool,
 }
 
@@ -52,6 +54,7 @@ impl Args {
         };
         Ok(Args {
             layouts,
+            apply_command: config.apply_command.map(|s| s.into()),
             save_and_exit: matches!(flags.command, Some(Command::SaveCurrent)),
         })
     }
@@ -93,6 +96,8 @@ enum Command {
 struct Config {
     /// The file to save and load layout data to/from.
     layouts: Option<String>,
+    /// The command to run after applying a layout.
+    apply_command: Option<String>,
 }
 
 impl Config {
@@ -100,6 +105,7 @@ impl Config {
     fn create_default() -> Self {
         Self {
             layouts: Some("~/.local/state/wl-distore/layouts.json".into()),
+            apply_command: None,
         }
     }
 
@@ -107,12 +113,14 @@ impl Config {
     fn take_from_flags(flags: &mut Flags) -> Self {
         Self {
             layouts: flags.layouts.take(),
+            apply_command: None,
         }
     }
 
     /// Overrides any fields in `self` with any non-[`None`] values in `overrides`.
     fn override_with(&mut self, overrides: Self) {
         self.layouts = overrides.layouts.or(self.layouts.take());
+        self.apply_command = overrides.apply_command.or(self.apply_command.take());
     }
 }
 

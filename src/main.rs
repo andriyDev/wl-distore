@@ -4,7 +4,7 @@ use complete::{HeadIdentity, HeadState, ModeState};
 use config::{Args, CollectArgsError};
 use partial::{PartialHead, PartialHeadState, PartialModeState, PartialObjects};
 use serde::{LayoutData, SavedConfiguration};
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 use wayland_client::{
     backend::ObjectId,
@@ -222,12 +222,18 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
             _ => return,
         };
         for (id, partial_mode) in state.partial_objects.id_to_mode.drain() {
-            state.id_to_mode.insert(
-                id,
-                partial_mode
-                    .try_into()
-                    .expect("Done is called, so the partial mode should be well-defined"),
-            );
+            let mode_proxy = partial_mode.proxy.clone();
+            let mode = match partial_mode.try_into() {
+                Ok(mode) => mode,
+                Err(err) => {
+                    // Sway can create "phantom" modes, so just log any errors and release the
+                    // offending modes. https://github.com/swaywm/sway/issues/8420
+                    error!("Failed to convert partial mode into full mode: {err}");
+                    mode_proxy.release();
+                    continue;
+                }
+            };
+            state.id_to_mode.insert(id, mode);
         }
         for (id, partial_head) in state.partial_objects.id_to_head.drain() {
             match state.id_to_head.entry(id.clone()) {

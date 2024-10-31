@@ -112,15 +112,14 @@ impl Head {
             ));
         }
 
-        self.mode_to_id.extend(partial.modes.iter().map(|id| {
-            (
+        self.mode_to_id
+            .extend(partial.modes.iter().filter_map(|id| {
+                // This should be a panic, but Sway can create "phantom" modes, so just ignore any
+                // missing modes. https://github.com/swaywm/sway/issues/8420
                 id_to_mode
                     .get(id)
-                    .map(|mode_state| mode_state.mode.clone())
-                    .expect("Head contains unknown mode"),
-                id.clone(),
-            )
-        }));
+                    .map(|mode_state| (mode_state.mode.clone(), id.clone()))
+            }));
 
         if let Some(enabled) = partial.enabled {
             if !enabled {

@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     io::{BufReader, BufWriter, ErrorKind},
     path::Path,
 };
@@ -163,6 +163,31 @@ impl LayoutData {
         serde_json::to_writer(BufWriter::new(file), &saved_layout_data)?;
         Ok(())
     }
+
+    /// Finds the index of a layout that matches the provided query..
+    pub fn find_layout_match(&self, query_layout: &HashSet<HeadIdentity>) -> Option<usize> {
+        for (index, saved_layout) in self.layouts.iter().enumerate() {
+            if matches_layout(&saved_layout.keys().cloned().collect(), query_layout) {
+                return Some(index);
+            }
+        }
+        None
+    }
+}
+
+/// Checks whether `layout` matches `query_layout`.
+fn matches_layout(layout: &HashSet<HeadIdentity>, query_layout: &HashSet<HeadIdentity>) -> bool {
+    if layout.len() != query_layout.len() {
+        return false;
+    }
+
+    for query_identity in query_layout.iter() {
+        if !layout.contains(query_identity) {
+            return false;
+        }
+    }
+
+    true
 }
 
 #[derive(Default, Serialize, Deserialize)]

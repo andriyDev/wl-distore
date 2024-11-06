@@ -98,15 +98,6 @@ impl AppData {
         })
     }
 
-    fn find_layout_match(&self, query_layout: &HashSet<HeadIdentity>) -> Option<usize> {
-        for (index, saved_layout) in self.layout_data.layouts.iter().enumerate() {
-            if matches_layout(&saved_layout.keys().cloned().collect(), query_layout) {
-                return Some(index);
-            }
-        }
-        None
-    }
-
     fn save_layouts(&self) {
         self.layout_data
             .save(&self.args.layouts)
@@ -153,20 +144,6 @@ impl AppData {
         }
         new_configuration.apply();
     }
-}
-
-fn matches_layout(layout: &HashSet<HeadIdentity>, query_layout: &HashSet<HeadIdentity>) -> bool {
-    if layout.len() != query_layout.len() {
-        return false;
-    }
-
-    for query_identity in query_layout.iter() {
-        if !layout.contains(query_identity) {
-            return false;
-        }
-    }
-
-    true
 }
 
 impl Dispatch<WlRegistry, ()> for AppData {
@@ -276,7 +253,9 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
                 )
             })
             .collect::<HashMap<_, _>>();
-        let layout_match = state.find_layout_match(&(current_layout.keys().cloned().collect()));
+        let layout_match = state
+            .layout_data
+            .find_layout_match(&(current_layout.keys().cloned().collect()));
         match (
             layout_match,
             // If save_and_exit is set, then we don't want to apply the layout at all.

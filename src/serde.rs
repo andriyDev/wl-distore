@@ -165,29 +165,97 @@ impl LayoutData {
     }
 
     /// Finds the index of a layout that matches the provided query..
-    pub fn find_layout_match(&self, query_layout: &HashSet<HeadIdentity>) -> Option<usize> {
+    pub fn find_layout_match(
+        &self,
+        query_layout: &HashSet<HeadIdentity>,
+    ) -> Option<(usize, HashMap<HeadIdentity, HeadIdentity>)> {
+        let mut best_match = None;
         for (index, saved_layout) in self.layouts.iter().enumerate() {
-            if matches_layout(&saved_layout.keys().cloned().collect(), query_layout) {
-                return Some(index);
+            let match_score = LayoutMatchScore::score(
+                saved_layout.keys().cloned().collect(),
+                query_layout.clone(),
+            );
+
+            let Some((match_score, layout_head_to_query_head)) = match_score else {
+                continue;
+            };
+
+            if match_score == LayoutMatchScore::Exact {
+                return Some((index, HashMap::new()));
+            }
+
+            let Some((best_score, _)) = best_match.as_ref() else {
+                best_match = Some((match_score, (index, layout_head_to_query_head)));
+                continue;
+            };
+
+            if match_score > *best_score {
+                best_match = Some((match_score, (index, layout_head_to_query_head)));
             }
         }
-        None
+        best_match.map(|(_, match_)| match_)
     }
 }
 
-/// Checks whether `layout` matches `query_layout`.
-fn matches_layout(layout: &HashSet<HeadIdentity>, query_layout: &HashSet<HeadIdentity>) -> bool {
-    if layout.len() != query_layout.len() {
-        return false;
-    }
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy)]
+enum LayoutMatchScore {
+    /// The layout doesn't match exactly, but all the same heads are present.
+    SameHeads,
+    /// The layout matches all heads exactly.
+    Exact,
+}
 
-    for query_identity in query_layout.iter() {
-        if !layout.contains(query_identity) {
-            return false;
+impl LayoutMatchScore {
+    /// Compute the score between `layout` and `query_layout`. For in-exact matches, also returns a
+    /// mapping from the query head to the "fuzzy-matched" layout head.
+    fn score(
+        mut layout: HashSet<HeadIdentity>,
+        mut query_layout: HashSet<HeadIdentity>,
+    ) -> Option<(Self, HashMap<HeadIdentity, HeadIdentity>)> {
+        // If the number of heads is different, immediately consider this a non-match.
+        if layout.len() != query_layout.len() {
+            return None;
         }
-    }
 
-    true
+        // Remove any heads that match exactly.
+        query_layout.retain(|head_identity| !layout.remove(head_identity));
+
+        // If there are no outstanding heads, this is a match!
+        if query_layout.is_empty() {
+            return Some((Self::Exact, Default::default()));
+        }
+
+        // Bail out if any head has no make/model. In-exact matches don't make
+        // sense if we don't have this information.
+        for layout in layout.iter() {
+            if layout.make.is_none() || layout.model.is_none() {
+                return None;
+            }
+        }
+
+        let mut layout_head_to_query_head = HashMap::new();
+        for query_head in query_layout {
+            let Some(matched_layout_head) = layout
+                .iter()
+                .find(|&layout_head| {
+                    query_head.make == layout_head.make
+                        && query_head.model == layout_head.model
+                        && query_head.serial_number == layout_head.serial_number
+                })
+                .cloned()
+            else {
+                // The query head had no match, so this layout doesn't match.
+                return None;
+            };
+
+            layout.remove(&matched_layout_head);
+            assert!(layout_head_to_query_head
+                .insert(matched_layout_head, query_head)
+                .is_none());
+        }
+
+        Some((Self::SameHeads, layout_head_to_query_head))
+    }
 }
 
 #[derive(Default, Serialize, Deserialize)]

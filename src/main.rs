@@ -109,6 +109,7 @@ impl AppData {
     fn apply_layout(
         &mut self,
         index: usize,
+        layout_head_to_query_head: HashMap<HeadIdentity, HeadIdentity>,
         output_manager: &ZwlrOutputManagerV1,
         qhandle: &wayland_client::QueueHandle<Self>,
         serial: u32,
@@ -117,6 +118,10 @@ impl AppData {
         let identity_to_configuration = &self.layout_data.layouts[index];
         let new_configuration = output_manager.create_configuration(serial, qhandle, ());
         for (identity, configuration) in identity_to_configuration.iter() {
+            // See if the layout head needs to be remapped to a query head, falling back to the
+            // identity on failure.
+            let identity = layout_head_to_query_head.get(identity).unwrap_or(identity);
+
             let id = self
                 .head_identity_to_id
                 .get(identity)
@@ -285,7 +290,7 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
             (None, DoneAction::ApplyResult) => {
                 panic!("We applied a layout, but then that layout didn't match?");
             }
-            (Some(layout_index), DoneAction::Update) => {
+            (Some((layout_index, _)), DoneAction::Update) => {
                 info!(
                     "Update layout: {:?}",
                     current_layout
@@ -300,7 +305,7 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
                     std::process::exit(0);
                 }
             }
-            (Some(layout_index), DoneAction::Apply) => {
+            (Some((layout_index, layout_head_to_query_head)), DoneAction::Apply) => {
                 info!(
                     "Apply layout: {:?}",
                     state.layout_data.layouts[layout_index]
@@ -308,7 +313,13 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
                         .map(|head_identity| head_identity.description.as_str())
                         .collect::<HashSet<_>>()
                 );
-                state.apply_layout(layout_index, proxy, qhandle, serial);
+                state.apply_layout(
+                    layout_index,
+                    layout_head_to_query_head,
+                    proxy,
+                    qhandle,
+                    serial,
+                );
             }
             (Some(_), DoneAction::ApplyResult) => {
                 debug!("Ignored the Done event since this is the result of an Apply");

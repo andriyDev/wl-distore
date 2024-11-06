@@ -268,7 +268,10 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
             (None, DoneAction::Update | DoneAction::Apply) => {
                 info!(
                     "Saved layout: {:?}",
-                    current_layout.keys().cloned().collect::<HashSet<_>>()
+                    current_layout
+                        .keys()
+                        .map(|head_identity| head_identity.description.as_str())
+                        .collect::<HashSet<_>>()
                 );
                 state.layout_data.layouts.push(current_layout);
                 state.save_layouts();
@@ -285,7 +288,10 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
             (Some(layout_index), DoneAction::Update) => {
                 info!(
                     "Update layout: {:?}",
-                    current_layout.keys().cloned().collect::<HashSet<_>>()
+                    current_layout
+                        .keys()
+                        .map(|head_identity| head_identity.description.as_str())
+                        .collect::<HashSet<_>>()
                 );
                 state.layout_data.layouts[layout_index] = current_layout;
                 state.save_layouts();
@@ -299,7 +305,7 @@ impl Dispatch<ZwlrOutputManagerV1, ()> for AppData {
                     "Apply layout: {:?}",
                     state.layout_data.layouts[layout_index]
                         .keys()
-                        .cloned()
+                        .map(|head_identity| head_identity.description.as_str())
                         .collect::<HashSet<_>>()
                 );
                 state.apply_layout(layout_index, proxy, qhandle, serial);

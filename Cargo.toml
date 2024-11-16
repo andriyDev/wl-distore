@@ -3,8 +3,11 @@ name = "wl-distore"
 version = "0.1.0"
 edition = "2021"
 
+description = "A program that manages your display configuration on wl-roots compositors automatically in the background."
+
 readme = "README.md"
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/andriyDev/wl-distore"
 
 [dependencies]
 clap = { version = "4.5.20", features = ["derive"] }

@@ -93,6 +93,11 @@ control - any change to the display configuration is persisted. In addition, the
 lack of a config file for layouts makes it difficult to specify explicit
 layouts.
 
+## Why is it called wl-distore?
+
+Mostly because I'm bad at naming things. It's meant to be (W)ay(l)and (di)splay
+(store).
+
 ## License
 
 License under either of
